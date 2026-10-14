@@ -34,8 +34,15 @@ export class HttpError extends Error {
 }
 
 export class StallError extends Error {
-  constructor(seconds: number) {
-    super(`The model sent nothing for ${seconds}s, so the request was aborted.`);
+  constructor(
+    seconds: number,
+    readonly beforeFirstResponse = false,
+  ) {
+    super(
+      beforeFirstResponse
+        ? `The model did not start responding within ${seconds}s, so the request was aborted. On CPU-only servers, loading the model or reading a long prompt can take minutes; raise owuiAgent.request.firstResponseTimeoutSeconds if this keeps happening.`
+        : `The model sent nothing for ${seconds}s, so the request was aborted.`,
+    );
     this.name = 'StallError';
   }
 }

@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
 import * as os from 'node:os';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { ApiKeyStore } from '../config/secrets';
-import { readSettings, updateModelOverride } from '../config/settings';
+import { addAllowlistEntry, readSettings, updateModelOverride } from '../config/settings';
 import { isInsecureRemote, parseBaseUrl } from '../net/egress';
 import type { OwuiClient } from '../owui/client';
 import { HttpError, MissingApiKeyError } from '../owui/errors';
@@ -10,15 +12,22 @@ import { resolveModel, type ResolvedModel, type ServerModel } from '../owui/mode
 import type { StreamDelta } from '../owui/streamAssembler';
 import { TokenCalibrator, type CalibrationState } from '../owui/tokens';
 import type { Usage } from '../owui/types';
-import type { ConnectionView, ModelView, SovereigntyLevel, ViewState } from '../shared/protocol';
-import { ChatSession, type RunContext } from './session';
-import { renderSystemPrompt } from './systemPrompt';
+import type { AgentMode, ApprovalDecision, ConnectionView, ModelView, SovereigntyLevel, ToolCardUpdate, ViewState } from '../shared/protocol';
+import { scratchRoot } from '../storage/scratchpad';
+import type { ToolRegistry } from '../tools/registry';
+import { ProcessManager } from '../tools/shell/processManager';
+import type { ShellRegistry } from '../tools/shell/shells';
+import type { PathGuard } from '../workspace/paths';
+import { AgentSession, type RunContext } from './session';
+import { MODE_TEXT, renderSystemPrompt } from './systemPrompt';
 
 const STATE_NOTICE = 'owuiAgent.sovereigntyNoticeAcknowledged';
 const STATE_MODEL = 'owuiAgent.selectedModel';
+const STATE_MODE = 'owuiAgent.mode';
 const STATE_CALIBRATION = 'owuiAgent.tokenCalibration';
 const STATE_WARNED = 'owuiAgent.warnedOnce';
 const STATE_TOTALS = 'owuiAgent.tokenTotals';
+const STATE_TEXT_MODE = 'owuiAgent.textToolModels';
 
 export interface TokenTotals {
   prompt: number;
@@ -29,39 +38,56 @@ export interface TokenTotals {
 export interface ControllerListener {
   state(state: ViewState): void;
   delta(id: string, delta: StreamDelta): void;
+  toolUpdate(id: string, patch: ToolCardUpdate): void;
 }
 
-export class ChatController {
+export interface ControllerDeps {
+  client: OwuiClient;
+  keys: ApiKeyStore;
+  globalState: vscode.Memento;
+  globalStorage: string;
+  tools: ToolRegistry;
+  shells: ShellRegistry;
+  paths: (scratchpad: string) => PathGuard;
+  ripgrep: string | undefined;
+}
+
+export class AgentController implements vscode.Disposable {
   private serverModels: ServerModel[] = [];
   private connection: ConnectionView;
-  private session: ChatSession;
+  private session: AgentSession;
   private readonly calibrator: TokenCalibrator;
   private listener: ControllerListener | undefined;
   private refreshSeq = 0;
   private readonly idle = new Set<() => void>();
 
-  constructor(
-    private readonly client: OwuiClient,
-    private readonly keys: ApiKeyStore,
-    private readonly globalState: vscode.Memento,
-  ) {
-    this.calibrator = new TokenCalibrator(globalState.get<Record<string, CalibrationState>>(STATE_CALIBRATION, {}));
+  constructor(private readonly deps: ControllerDeps) {
+    this.calibrator = new TokenCalibrator(deps.globalState.get<Record<string, CalibrationState>>(STATE_CALIBRATION, {}));
     this.connection = { baseUrl: '', insecure: false, hasKey: false, status: 'unknown' };
-    this.session = this.newChatSession();
+    this.session = this.newAgentSession();
   }
 
   setListener(listener: ControllerListener | undefined): void {
     this.listener = listener;
   }
 
-  get currentSession(): ChatSession {
+  get currentSession(): AgentSession {
     return this.session;
+  }
+
+  get mode(): AgentMode {
+    return this.deps.globalState.get<AgentMode>(STATE_MODE, 'ask');
+  }
+
+  async setMode(mode: AgentMode): Promise<void> {
+    await this.deps.globalState.update(STATE_MODE, mode);
+    this.emitState();
   }
 
   async refresh(): Promise<void> {
     const seq = ++this.refreshSeq;
     const settings = readSettings();
-    const conn: ConnectionView = { baseUrl: settings.baseUrl, insecure: false, hasKey: !!(await this.keys.get()), status: 'connecting' };
+    const conn: ConnectionView = { baseUrl: settings.baseUrl, insecure: false, hasKey: !!(await this.deps.keys.get()), status: 'connecting' };
     try {
       conn.insecure = isInsecureRemote(parseBaseUrl(settings.baseUrl));
     } catch (e) {
@@ -77,7 +103,7 @@ export class ChatController {
       return;
     }
     try {
-      const [version, models] = await Promise.all([this.client.version().catch(() => undefined), this.client.listModels()]);
+      const [version, models] = await Promise.all([this.deps.client.version().catch(() => undefined), this.deps.client.listModels()]);
       if (seq !== this.refreshSeq) return;
       this.serverModels = models;
       this.connection = { ...conn, status: 'ok' };
@@ -92,7 +118,7 @@ export class ChatController {
 
   async selectModel(id: string): Promise<void> {
     if (!this.serverModels.some((m) => m.id === id)) return;
-    await this.globalState.update(STATE_MODEL, id);
+    await this.deps.globalState.update(STATE_MODEL, id);
     this.emitState();
   }
 
@@ -101,24 +127,37 @@ export class ChatController {
     this.emitState();
   }
 
+  async setModelThinking(id: string, thinking: boolean): Promise<void> {
+    await updateModelOverride(id, { thinking });
+    this.emitState();
+  }
+
   async acknowledgeNotice(): Promise<void> {
-    await this.globalState.update(STATE_NOTICE, true);
+    await this.deps.globalState.update(STATE_NOTICE, true);
     this.emitState();
   }
 
   async resetNotice(): Promise<void> {
-    await this.globalState.update(STATE_NOTICE, false);
+    await this.deps.globalState.update(STATE_NOTICE, false);
     this.emitState();
   }
 
   newSession(): void {
-    this.session.stop();
-    this.session = this.newChatSession();
+    void this.session.dispose();
+    this.session = this.newAgentSession();
     this.emitState();
   }
 
   stop(): void {
     this.session.stop();
+  }
+
+  approve(itemId: string, decision: ApprovalDecision): void {
+    this.session.resolveApproval(itemId, decision);
+  }
+
+  answer(itemId: string, answers: string[][]): void {
+    this.session.resolveQuestion(itemId, answers);
   }
 
   async send(text: string): Promise<void> {
@@ -128,10 +167,10 @@ export class ChatController {
     this.notifyIdle();
   }
 
-  async retry(): Promise<void> {
+  async resume(): Promise<void> {
     const ctx = this.runContext();
     if (!ctx) return;
-    await this.session.retry(ctx);
+    await this.session.resume(ctx);
     this.notifyIdle();
   }
 
@@ -147,6 +186,7 @@ export class ChatController {
       name: m.name,
       local: m.local,
       vision: m.vision,
+      thinking: m.thinking ?? true,
       contextSize: m.contextSize,
       contextSource: m.contextSource,
     }));
@@ -154,9 +194,11 @@ export class ChatController {
       connection: this.connection,
       models,
       busy: this.session.busy,
+      mode: this.mode,
       transcript: this.session.transcript,
+      todos: this.session.todos,
       sovereignty: sovereignty(selected),
-      noticeAcknowledged: this.globalState.get<boolean>(STATE_NOTICE, false),
+      noticeAcknowledged: this.deps.globalState.get<boolean>(STATE_NOTICE, false),
     };
     if (selected) state.selectedModel = selected.id;
     const usage = this.session.usage ?? (selected ? { promptTokens: 0, contextSize: selected.contextSize, contextSource: selected.contextSource, estimated: true } : undefined);
@@ -166,6 +208,10 @@ export class ChatController {
 
   emitState(): void {
     this.listener?.state(this.viewState());
+  }
+
+  dispose(): void {
+    void this.session.dispose();
   }
 
   private runContext(): RunContext | undefined {
@@ -181,43 +227,84 @@ export class ChatController {
       this.emitState();
       return undefined;
     }
+    const settings = readSettings();
+    const shellPref = process.platform === 'win32' ? settings.windowsShell : settings.posixShell;
+    const shell = this.deps.shells.pick(shellPref === 'auto' ? undefined : shellPref);
     const folder = vscode.workspace.workspaceFolders?.[0];
+    const textModels = this.deps.globalState.get<string[]>(STATE_TEXT_MODE, []);
+    const toolMode = model.toolMode === 'text' || (model.toolMode === 'auto' && textModels.includes(model.id)) ? 'text' : 'native';
+    const scratchpad = this.session.scratchpad;
     return {
       model,
-      systemPrompt: renderSystemPrompt({
-        os: `${os.type()} ${os.release()} (${process.platform})`,
-        date: new Date().toISOString().slice(0, 10),
-        workspace: folder ? folder.uri.fsPath : '(no folder open)',
-      }),
+      toolMode,
+      systemPrompt: (mode) =>
+        renderSystemPrompt({
+          os: `${os.type()} ${os.release()} (${process.platform})`,
+          shell: `${shell.label} (${shell.id})`,
+          shells: this.deps.shells.available().map((s) => `${s.label} (${s.id})`).join(', '),
+          date: new Date().toISOString().slice(0, 10),
+          workspace: folder ? folder.uri.fsPath : '(no folder open; work in the scratchpad)',
+          scratchpad,
+          mode: MODE_TEXT[mode] ?? mode,
+        }),
       calibrator: this.calibrator,
+      mode: () => this.mode,
+      allowlist: () => readSettings().commandAllowlist,
+      toolSettings: {
+        commandTimeoutSeconds: settings.commandTimeoutSeconds,
+        maxOutputChars: Math.max(4000, Math.min(30_000, Math.round(model.contextSize * 0.6))),
+        defaultShell: shell.id,
+      },
+      maxIterations: settings.maxIterations,
       warnOnce: (key, text) => this.warnOnce(key, text),
+      onToolsUnsupported: () => {
+        if (!textModels.includes(model.id)) void this.deps.globalState.update(STATE_TEXT_MODE, [...textModels, model.id]);
+      },
+      addAllowlistEntry: (entry) => addAllowlistEntry(entry),
     };
   }
 
   private warnOnce(key: string, text: string): void {
-    const persistent = key.startsWith('usage:');
-    const warned = this.globalState.get<string[]>(STATE_WARNED, []);
+    const persistent = key.startsWith('usage:') || key.startsWith('textmode:');
+    const warned = this.deps.globalState.get<string[]>(STATE_WARNED, []);
     if (persistent && warned.includes(key)) return;
     if (!persistent && this.session.transcript.some((t) => t.kind === 'warning' && t.id === key)) return;
     this.session.transcript.push({ id: persistent ? randomUUID() : key, kind: 'warning', text, ts: Date.now() });
-    if (persistent) void this.globalState.update(STATE_WARNED, [...warned, key]);
+    if (persistent) void this.deps.globalState.update(STATE_WARNED, [...warned, key]);
   }
 
-  private newChatSession(): ChatSession {
-    return new ChatSession(this.client, {
-      changed: () => this.emitState(),
-      delta: (id, d) => this.listener?.delta(id, d),
-      usage: (model, usage) => this.recordTotals(model, usage),
-    });
+  private newAgentSession(): AgentSession {
+    const id = randomUUID();
+    const scratchpad = path.join(scratchRoot(this.deps.globalStorage), `${new Date().toISOString().slice(0, 10)}-${id.slice(0, 8)}`);
+    void mkdir(scratchpad, { recursive: true }).catch(() => undefined);
+    const session = new AgentSession(
+      {
+        client: this.deps.client,
+        tools: this.deps.tools,
+        shells: this.deps.shells,
+        paths: this.deps.paths(scratchpad),
+        processes: new ProcessManager(),
+        scratchpad,
+        ripgrep: this.deps.ripgrep,
+      },
+      {
+        changed: () => this.emitState(),
+        delta: (itemId, d) => this.listener?.delta(itemId, d),
+        toolUpdate: (itemId, patch) => this.listener?.toolUpdate(itemId, patch),
+        usage: (model, usage) => this.recordTotals(model, usage),
+      },
+      id,
+    );
+    return session;
   }
 
   private recordTotals(model: ResolvedModel, usage: Usage | null): void {
-    void this.globalState.update(STATE_CALIBRATION, this.calibrator.snapshot());
+    void this.deps.globalState.update(STATE_CALIBRATION, this.calibrator.snapshot());
     if (!usage) return;
-    const totals = this.globalState.get<Record<string, TokenTotals>>(STATE_TOTALS, {});
+    const totals = this.deps.globalState.get<Record<string, TokenTotals>>(STATE_TOTALS, {});
     const cur = totals[model.id] ?? { prompt: 0, completion: 0, requests: 0 };
     totals[model.id] = { prompt: cur.prompt + usage.promptTokens, completion: cur.completion + usage.completionTokens, requests: cur.requests + 1 };
-    void this.globalState.update(STATE_TOTALS, totals);
+    void this.deps.globalState.update(STATE_TOTALS, totals);
   }
 
   private notifyIdle(): void {
@@ -233,15 +320,15 @@ export class ChatController {
 
   private selectedModel(): ResolvedModel | undefined {
     const models = this.resolvedModels();
-    const id = this.globalState.get<string>(STATE_MODEL);
+    const id = this.deps.globalState.get<string>(STATE_MODEL);
     return models.find((m) => m.id === id) ?? models.find((m) => m.id === readSettings().defaultModel) ?? models[0];
   }
 
   private ensureSelection(): void {
-    const id = this.globalState.get<string>(STATE_MODEL);
+    const id = this.deps.globalState.get<string>(STATE_MODEL);
     if (id && this.serverModels.some((m) => m.id === id)) return;
     const fallback = this.selectedModel();
-    if (fallback) void this.globalState.update(STATE_MODEL, fallback.id);
+    if (fallback) void this.deps.globalState.update(STATE_MODEL, fallback.id);
   }
 }
 

@@ -8,11 +8,12 @@ import { MockOwui, loadFixture, sseChunks } from '../mock-owui/server';
 const KEY = 'sk-test';
 let mock: MockOwui;
 
-function client(opts: { key?: string | undefined; stallMs?: number; retries?: number } = {}) {
+function client(opts: { key?: string | undefined; stallMs?: number; firstMs?: number; retries?: number } = {}) {
   const egress = new Egress(() => mock.baseUrl);
   const key = 'key' in opts ? opts.key : KEY;
   return new OwuiClient(egress, async () => key, {
     stallTimeoutMs: () => opts.stallMs ?? 5000,
+    firstResponseTimeoutMs: () => opts.firstMs ?? opts.stallMs ?? 5000,
     maxRetries: () => opts.retries ?? 2,
     backoffBaseMs: 5,
     backoffMaxMs: 20,
@@ -119,6 +120,21 @@ describe('OwuiClient', () => {
     mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: 'never finishes' }), hangAfter: 2 });
     const err = await client({ stallMs: 150, retries: 0 }).chat(req).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StallError);
+  });
+
+  it('waits longer for the first response than between chunks', async () => {
+    mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: 'slow start' }), headersDelayMs: 400 });
+    const turn = await client({ stallMs: 150, firstMs: 2000, retries: 0 }).chat(req);
+    expect(turn.content).toBe('slow start');
+  });
+
+  it('gives up without retrying when the model never starts responding', async () => {
+    mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: 'too late' }), headersDelayMs: 1500 }, { kind: 'sse', chunks: sseChunks({ content: 'unused' }) });
+    const err = (await client({ stallMs: 100, firstMs: 300, retries: 2 }).chat(req).catch((e: unknown) => e)) as StallError;
+    expect(err).toBeInstanceOf(StallError);
+    expect(err.beforeFirstResponse).toBe(true);
+    expect(err.message).toMatch(/did not start responding/);
+    expect(mock.chatRequests()).toHaveLength(1);
   });
 
   it('stops immediately when the caller aborts', async () => {

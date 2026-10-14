@@ -1,11 +1,9 @@
 import { createRequire } from 'node:module';
 import type * as NetModule from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ChatSession, type RunContext } from '../../src/agent/session';
 import { Egress, EgressBlockedError } from '../../src/net/egress';
 import { OwuiClient } from '../../src/owui/client';
-import { resolveModel } from '../../src/owui/models';
-import { TokenCalibrator } from '../../src/owui/tokens';
+import { createHarness, tools } from '../helpers/agent';
 import { MockOwui, sseChunks } from '../mock-owui/server';
 
 const nodeRequire = createRequire(__filename);
@@ -85,36 +83,41 @@ describe('network egress', () => {
     seen.length = before;
   });
 
-  it('a full session contacts only the configured Open WebUI origin', async () => {
+  it('a full agent session with tools contacts only the configured Open WebUI origin', async () => {
     const start = seen.length;
-    const egress = new Egress(() => mock.baseUrl);
-    const client = new OwuiClient(egress, async () => KEY, { stallTimeoutMs: () => 5000, maxRetries: () => 2, backoffBaseMs: 5, backoffMaxMs: 10 });
-
-    const [server] = await client.listModels();
+    const client = new OwuiClient(new Egress(() => mock.baseUrl), async () => KEY, { stallTimeoutMs: () => 5000, maxRetries: () => 2, backoffBaseMs: 5, backoffMaxMs: 10 });
+    await client.listModels();
     await client.version();
-    const model = resolveModel(server!, { contextSize: 8192 });
-    const ctx: RunContext = { model, systemPrompt: 'test', calibrator: new TokenCalibrator(), warnOnce: () => undefined };
-    const session = new ChatSession(client, { changed: () => undefined, delta: () => undefined, usage: () => undefined });
+    const h = await createHarness({ baseUrl: mock.baseUrl, apiKey: KEY, mode: 'auto' });
+    try {
+      mock.enqueue(
+        { kind: 'sse', chunks: sseChunks({ reasoning: 'r', content: 'first', usage: { prompt_tokens: 20, completion_tokens: 2 } }) },
+        { kind: 'json', status: 503, body: { detail: 'busy' } },
+        {
+          kind: 'sse',
+          chunks: sseChunks({
+            content: 'Writing a file and running it.',
+            toolCalls: [
+              { name: 'write_file', arguments: { path: 'hello.js', content: "console.log('see https://example.com/docs')\n" } },
+              { name: 'run_command', arguments: { command: 'node hello.js', description: 'Run the script' } },
+              { name: 'read_file', arguments: { path: 'hello.js' } },
+            ],
+          }),
+        },
+        { kind: 'sse', chunks: sseChunks({ content: 'Done: it printed a URL but nothing was fetched.' }) },
+        { kind: 'redirect', location: 'https://attacker.example/steal' },
+      );
+      await h.session.send('hello', h.ctx);
+      await h.session.send('again', h.ctx);
+      await expect(client.chat({ model: 'mock-model', messages: [{ role: 'user', content: 'redirect me' }] })).rejects.toBeInstanceOf(EgressBlockedError);
 
-    mock.enqueue(
-      { kind: 'sse', chunks: sseChunks({ reasoning: 'r', content: 'first', usage: { prompt_tokens: 20, completion_tokens: 2 } }) },
-      { kind: 'json', status: 503, body: { detail: 'busy' } },
-      { kind: 'sse', chunks: sseChunks({ content: 'see https://example.com/docs and http://10.0.0.5/admin' }) },
-      { kind: 'redirect', location: 'https://attacker.example/steal' },
-    );
-    await session.send('hello', ctx);
-    await session.send('again', ctx);
-    await expect(
-      client.chat({ model: model.id, messages: [{ role: 'user', content: 'redirect me' }] }),
-    ).rejects.toBeInstanceOf(EgressBlockedError);
-
-    const contacted = seen.slice(start);
-    expect(contacted.length).toBeGreaterThan(0);
-    const foreign = contacted.filter((d) => d.via === 'dns.lookup' ? d.host !== allowed.host : d.host !== allowed.host || d.port !== allowed.port);
-    expect(foreign).toEqual([]);
-    expect(session.transcript.filter((t) => t.kind === 'assistant').map((t) => (t as { text: string }).text)).toEqual([
-      'first',
-      'see https://example.com/docs and http://10.0.0.5/admin',
-    ]);
+      const contacted = seen.slice(start);
+      expect(contacted.length).toBeGreaterThan(0);
+      const foreign = contacted.filter((d) => (d.via === 'dns.lookup' ? d.host !== allowed.host : d.host !== allowed.host || d.port !== allowed.port));
+      expect(foreign).toEqual([]);
+      expect(tools(h.session).map((t) => t.status)).toEqual(['done', 'done', 'done']);
+    } finally {
+      await h.cleanup();
+    }
   });
 });

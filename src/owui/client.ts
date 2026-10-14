@@ -8,6 +8,7 @@ import type { AssistantTurn, ChatRequest } from './types';
 
 export interface ClientOptions {
   stallTimeoutMs: () => number;
+  firstResponseTimeoutMs?: () => number;
   maxRetries: () => number;
   backoffBaseMs?: number;
   backoffMaxMs?: number;
@@ -58,7 +59,10 @@ export class OwuiClient {
       } catch (e) {
         if (signal?.aborted) throw abortError();
         if (isAbortError(e)) throw e;
-        const retryable = e instanceof HttpError ? e.retryable : !(e instanceof MissingApiKeyError || e instanceof EgressBlockedError || e instanceof InvalidBaseUrlError);
+        const retryable =
+          e instanceof HttpError
+            ? e.retryable
+            : !(e instanceof MissingApiKeyError || e instanceof EgressBlockedError || e instanceof InvalidBaseUrlError || (e instanceof StallError && e.beforeFirstResponse));
         if (!retryable || attempt >= maxRetries) throw e;
         const delayMs = backoffDelay(
           attempt,
@@ -83,14 +87,17 @@ export class OwuiClient {
     if (signal?.aborted) throw abortError();
     signal?.addEventListener('abort', onOuterAbort, { once: true });
     const stallMs = this.opts.stallTimeoutMs();
-    let stalled = false;
+    const firstMs = Math.max(stallMs, this.opts.firstResponseTimeoutMs?.() ?? stallMs);
+    let receivedEvent = false;
+    let stalled: StallError | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const arm = () => {
       if (timer) clearTimeout(timer);
+      const ms = receivedEvent ? stallMs : firstMs;
       timer = setTimeout(() => {
-        stalled = true;
-        controller.abort(new StallError(Math.round(stallMs / 1000)));
-      }, stallMs);
+        stalled = new StallError(Math.round(ms / 1000), !receivedEvent);
+        controller.abort(stalled);
+      }, ms);
     };
     try {
       arm();
@@ -98,6 +105,10 @@ export class OwuiClient {
       if (req.tools?.length) body.tools = req.tools;
       if (req.stop?.length) body.stop = req.stop;
       if (req.temperature !== undefined) body.temperature = req.temperature;
+      const params: Record<string, unknown> = {};
+      if (req.think !== undefined) params.think = req.think;
+      if (req.numCtx !== undefined) params.num_ctx = req.numCtx;
+      if (Object.keys(params).length) body.params = params;
       const res = await this.egress.request('/api/chat/completions', {
         method: 'POST',
         headers: { ...(await this.headers(true)), Accept: 'text/event-stream, application/json' },
@@ -127,9 +138,11 @@ export class OwuiClient {
       let done = false;
       while (!done) {
         const r = await reader.read();
-        arm();
         if (r.done) break;
-        for (const ev of decoder.push(text.decode(r.value, { stream: true }))) {
+        const events = decoder.push(text.decode(r.value, { stream: true }));
+        if (events.length) receivedEvent = true;
+        arm();
+        for (const ev of events) {
           if (this.handleEvent(ev.data, assembler, onDelta)) done = true;
         }
       }
@@ -139,7 +152,7 @@ export class OwuiClient {
       for (const d of assembler.flushPending()) onDelta(d);
       return assembler.finish();
     } catch (e) {
-      if (stalled) throw new StallError(Math.round(stallMs / 1000));
+      if (stalled) throw stalled;
       throw e;
     } finally {
       if (timer) clearTimeout(timer);

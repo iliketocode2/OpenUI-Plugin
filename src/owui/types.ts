@@ -61,4 +61,6 @@ export interface ChatRequest {
   tools?: ToolDefinition[];
   stop?: string[];
   temperature?: number;
+  think?: boolean;
+  numCtx?: number;
 }

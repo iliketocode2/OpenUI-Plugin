@@ -31,7 +31,7 @@ function sentMessages(index: number): WireMessage[] {
 
 describe('OWUI Agent chat (integration)', () => {
   before(async () => {
-    mock = new MockOwui({ apiKey: KEY, models: { data: [{ id: 'mock-model', name: 'Mock Model', info: { params: { num_ctx: 16384 }, meta: { capabilities: { vision: false } } } }] } });
+    mock = new MockOwui({ apiKey: KEY, models: { data: [{ id: 'chat-model', name: 'Mock Model', info: { params: { num_ctx: 16384 }, meta: { capabilities: { vision: false } } } }] } });
     await mock.start();
     const ext = vscode.extensions.getExtension<TestApi>('local.owui-agent');
     assert.ok(ext, 'extension not found');
@@ -63,8 +63,8 @@ describe('OWUI Agent chat (integration)', () => {
     const state = api.controller.viewState();
     assert.equal(state.connection.status, 'ok');
     assert.equal(state.connection.serverVersion, '0.12.0');
-    assert.deepEqual(state.models.map((m) => m.id), ['mock-model']);
-    assert.equal(state.selectedModel, 'mock-model');
+    assert.deepEqual(state.models.map((m) => m.id), ['chat-model']);
+    assert.equal(state.selectedModel, 'chat-model');
     assert.equal(state.models[0]!.contextSource, 'server');
     assert.equal(state.sovereignty, 'unverified');
   });
@@ -122,7 +122,7 @@ describe('OWUI Agent chat (integration)', () => {
   });
 
   it('refuses to send a prompt that cannot fit the context window', async () => {
-    await configure({ models: { 'mock-model': { contextSize: 1024 } } });
+    await configure({ models: { 'chat-model': { contextSize: 1024 } } });
     try {
       await api.controller.send(`x ${'lorem ipsum dolor sit amet '.repeat(400)}`);
       assert.match(last('error').text, /does not fit/);
@@ -165,9 +165,9 @@ describe('OWUI Agent chat (integration)', () => {
   });
 
   it('marks a model as local and updates the sovereignty indicator', async () => {
-    await api.controller.setModelLocal('mock-model', true);
+    await api.controller.setModelLocal('chat-model', true);
     assert.equal(api.controller.viewState().sovereignty, 'local');
-    await api.controller.setModelLocal('mock-model', false);
+    await api.controller.setModelLocal('chat-model', false);
     assert.equal(api.controller.viewState().sovereignty, 'unverified');
   });
 

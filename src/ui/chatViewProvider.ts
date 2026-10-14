@@ -1,29 +1,41 @@
 import * as vscode from 'vscode';
-import type { ChatController } from '../agent/controller';
+import type { AgentController } from '../agent/controller';
 import type { StreamDelta } from '../owui/streamAssembler';
-import type { FromWebview, ToWebview } from '../shared/protocol';
+import type { FromWebview, ToWebview, ToolCardUpdate } from '../shared/protocol';
 import { createNonce, renderHtml } from './html';
 
-const DELTA_FLUSH_MS = 40;
+const FLUSH_MS = 40;
 
 export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   static readonly viewId = 'owuiAgent.chat';
   private view: vscode.WebviewView | undefined;
-  private pending = new Map<string, { id: string; kind: StreamDelta['kind']; text: string }>();
+  private readonly pendingDeltas = new Map<string, { id: string; kind: StreamDelta['kind']; text: string }>();
+  private readonly pendingTools = new Map<string, ToolCardUpdate>();
+  private readonly queuedInserts: string[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly controller: ChatController,
+    private readonly controller: AgentController,
     private readonly commands: { setApiKey(): Promise<void>; openSettings(): Promise<void> },
   ) {
     controller.setListener({
       state: (state) => {
-        this.flushDeltas();
+        this.flush();
         this.post({ type: 'state', state: structuredClone(state) });
       },
-      delta: (id, d) => this.queueDelta(id, d),
+      delta: (id, d) => {
+        const key = `${id}:${d.kind}`;
+        const cur = this.pendingDeltas.get(key);
+        if (cur) cur.text += d.text;
+        else this.pendingDeltas.set(key, { id, kind: d.kind, text: d.text });
+        this.schedule();
+      },
+      toolUpdate: (id, patch) => {
+        this.pendingTools.set(id, { ...this.pendingTools.get(id), ...patch });
+        this.schedule();
+      },
     });
   }
 
@@ -49,10 +61,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.post({ type: 'focusInput' });
   }
 
+  async insertText(text: string): Promise<void> {
+    if (!this.view) {
+      this.queuedInserts.push(text);
+      await vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
+      return;
+    }
+    this.view.show(true);
+    this.post({ type: 'insertText', text });
+  }
+
   private async onMessage(m: FromWebview): Promise<void> {
     switch (m.type) {
       case 'ready':
         this.controller.emitState();
+        for (const text of this.queuedInserts.splice(0)) this.post({ type: 'insertText', text });
         void this.controller.refresh();
         return;
       case 'send':
@@ -62,13 +85,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         this.controller.stop();
         return;
       case 'retry':
-        await this.controller.retry();
+      case 'continue':
+        await this.controller.resume();
+        return;
+      case 'approve':
+        this.controller.approve(m.id, m.decision);
+        return;
+      case 'answer':
+        this.controller.answer(m.id, m.answers);
         return;
       case 'selectModel':
         await this.controller.selectModel(m.id);
         return;
       case 'setModelLocal':
         await this.controller.setModelLocal(m.id, m.local);
+        return;
+      case 'setModelThinking':
+        await this.controller.setModelThinking(m.id, m.thinking);
+        return;
+      case 'setMode':
+        await this.controller.setMode(m.mode);
         return;
       case 'newSession':
         this.controller.newSession();
@@ -85,25 +121,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       case 'acknowledgeNotice':
         await this.controller.acknowledgeNotice();
         return;
+      case 'openFile':
+        await openFile(m.path);
+        return;
       case 'openLink':
         await openLinkWithConsent(m.href);
         return;
     }
   }
 
-  private queueDelta(id: string, d: StreamDelta): void {
-    const key = `${id}:${d.kind}`;
-    const cur = this.pending.get(key);
-    if (cur) cur.text += d.text;
-    else this.pending.set(key, { id, kind: d.kind, text: d.text });
-    this.flushTimer ??= setTimeout(() => this.flushDeltas(), DELTA_FLUSH_MS);
+  private schedule(): void {
+    this.flushTimer ??= setTimeout(() => this.flush(), FLUSH_MS);
   }
 
-  private flushDeltas(): void {
+  private flush(): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = undefined;
-    for (const p of this.pending.values()) this.post({ type: 'delta', id: p.id, kind: p.kind, text: p.text });
-    this.pending.clear();
+    for (const p of this.pendingDeltas.values()) this.post({ type: 'delta', id: p.id, kind: p.kind, text: p.text });
+    this.pendingDeltas.clear();
+    for (const [id, patch] of this.pendingTools) this.post({ type: 'toolUpdate', id, patch });
+    this.pendingTools.clear();
   }
 
   private post(msg: ToWebview): void {
@@ -114,6 +151,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.controller.setListener(undefined);
     if (this.flushTimer) clearTimeout(this.flushTimer);
     for (const d of this.disposables) d.dispose();
+  }
+}
+
+async function openFile(p: string): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  const uri = /^([a-zA-Z]:[\\/]|\/)/.test(p) ? vscode.Uri.file(p) : folder ? vscode.Uri.joinPath(folder.uri, p) : undefined;
+  if (!uri) return;
+  try {
+    await vscode.window.showTextDocument(uri, { preview: true });
+  } catch {
+    void vscode.window.showWarningMessage(`Could not open ${p}.`);
   }
 }
 

@@ -66,6 +66,16 @@
         "command": "owuiAgent.showSovereigntyNotice",
         "title": "Show Data Sovereignty Notice",
         "category": "OWUI Agent"
+      },
+      {
+        "command": "owuiAgent.addSelection",
+        "title": "Add Selection to Chat",
+        "category": "OWUI Agent"
+      },
+      {
+        "command": "owuiAgent.addFile",
+        "title": "Add File to Chat",
+        "category": "OWUI Agent"
       }
     ],
     "menus": {
@@ -80,6 +90,20 @@
           "when": "view == owuiAgent.chat",
           "group": "navigation@2"
         }
+      ],
+      "editor/context": [
+        {
+          "command": "owuiAgent.addSelection",
+          "when": "editorHasSelection",
+          "group": "owuiAgent@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "owuiAgent.addFile",
+          "when": "!explorerResourceIsFolder",
+          "group": "owuiAgent@1"
+        }
       ]
     },
     "keybindings": [
@@ -87,6 +111,12 @@
         "command": "owuiAgent.stop",
         "key": "escape",
         "when": "focusedView == owuiAgent.chat"
+      },
+      {
+        "command": "owuiAgent.addSelection",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k",
+        "when": "editorTextFocus"
       }
     ],
     "configuration": {
@@ -106,7 +136,7 @@
         "owuiAgent.models": {
           "type": "object",
           "default": {},
-          "markdownDescription": "Per-model overrides, keyed by model ID. Fields: `toolMode` (`auto` | `native` | `text`), `contextSize` (tokens), `vision` (boolean), `local` (boolean — you confirm the model runs on infrastructure you control).",
+          "markdownDescription": "Per-model overrides, keyed by model ID. Fields: `toolMode` (`auto` | `native` | `text`), `contextSize` (tokens; also sent to Ollama as `num_ctx`, so Ollama loads the model with that context), `vision` (boolean), `local` (boolean: you confirm the model runs on infrastructure you control), `thinking` (boolean: `false` asks Ollama models to skip their reasoning phase, which is much faster).",
           "additionalProperties": {
             "type": "object",
             "properties": {
@@ -127,6 +157,9 @@
               },
               "local": {
                 "type": "boolean"
+              },
+              "thinking": {
+                "type": "boolean"
               }
             }
           }
@@ -135,7 +168,7 @@
           "type": "integer",
           "default": 300,
           "minimum": 10,
-          "description": "Abort a model request when the stream sends nothing for this many seconds. CPU-only inference may need a high value."
+          "description": "Abort a model request when the stream goes silent for this many seconds after it has started responding."
         },
         "owuiAgent.request.maxRetries": {
           "type": "integer",
@@ -143,6 +176,62 @@
           "minimum": 0,
           "maximum": 10,
           "description": "Retries for connection errors, HTTP 429 and 5xx responses."
+        },
+        "owuiAgent.shell.windows": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "gitbash",
+            "powershell",
+            "cmd"
+          ],
+          "default": "auto",
+          "markdownDescription": "Shell for agent commands on Windows. `auto` uses Git Bash when installed, otherwise PowerShell."
+        },
+        "owuiAgent.shell.posix": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "bash",
+            "zsh",
+            "sh"
+          ],
+          "default": "auto",
+          "description": "Shell for agent commands on macOS and Linux. auto prefers bash."
+        },
+        "owuiAgent.commands.timeoutSeconds": {
+          "type": "integer",
+          "default": 120,
+          "minimum": 5,
+          "maximum": 3600,
+          "description": "Default timeout for run_command. The agent can request a longer one per command."
+        },
+        "owuiAgent.commands.allowlist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Commands that run without asking, matched as word prefixes (e.g. `npm test`, `git status`, `npx tsc`). Commands that change Git history, publish, launch applications, start services or use sudo always ask. Use `*` as a wildcard word."
+        },
+        "owuiAgent.agent.maxIterations": {
+          "type": "integer",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 500,
+          "description": "Model turns per request before the agent pauses and asks to continue."
+        },
+        "owuiAgent.scratchpad.retentionDays": {
+          "type": "integer",
+          "default": 7,
+          "minimum": 0,
+          "description": "Delete scratchpad folders older than this many days at startup."
+        },
+        "owuiAgent.request.firstResponseTimeoutSeconds": {
+          "type": "integer",
+          "default": 1200,
+          "minimum": 30,
+          "description": "How long to wait for the model to start responding. CPU-only servers may need minutes to load a model or read a long prompt."
         }
       }
     }
@@ -157,7 +246,8 @@
     "test:integration": "node esbuild.mjs && node test/integration/run.mjs",
     "check": "npm run typecheck && npm run lint && npm test && npm run test:integration",
     "smoke:live": "node scripts/smoke-live.mjs",
-    "package": "node scripts/package-vsix.mjs"
+    "package": "node scripts/package-vsix.mjs",
+    "smoke:agent": "node scripts/live-agent.mjs"
   },
   "dependencies": {
     "diff": "9.0.0",

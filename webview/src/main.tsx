@@ -1,27 +1,24 @@
 import { render, type RefObject } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'preact/hooks';
 import { SOVEREIGNTY_NOTICE } from '../../src/shared/notice';
-import type { FromWebview, ToWebview, TranscriptItem, ViewState } from '../../src/shared/protocol';
+import type { AgentMode, ToWebview, ToolCardUpdate, TranscriptItem, ViewState } from '../../src/shared/protocol';
+import { post, vscode } from './api';
 import { renderMarkdown } from './markdown';
+import { QuestionCard, TodoPanel } from './Question';
+import { ToolCard } from './ToolCard';
 
-interface VsCodeApi {
-  postMessage(msg: FromWebview): void;
-  getState(): unknown;
-  setState(state: unknown): void;
-}
-
-declare function acquireVsCodeApi(): VsCodeApi;
-
-const vscode = acquireVsCodeApi();
-const post = (msg: FromWebview) => vscode.postMessage(msg);
-
-type Action = { type: 'state'; state: ViewState } | { type: 'delta'; id: string; kind: 'content' | 'reasoning'; text: string };
+type Action =
+  | { type: 'state'; state: ViewState }
+  | { type: 'delta'; id: string; kind: 'content' | 'reasoning'; text: string }
+  | { type: 'toolUpdate'; id: string; patch: ToolCardUpdate };
 
 function reducer(state: ViewState | undefined, action: Action): ViewState | undefined {
   if (action.type === 'state') return action.state;
   if (!state) return state;
   const transcript = state.transcript.map((item) => {
-    if (item.id !== action.id || item.kind !== 'assistant') return item;
+    if (item.id !== action.id) return item;
+    if (action.type === 'toolUpdate') return item.kind === 'tool' ? { ...item, ...action.patch } : item;
+    if (item.kind !== 'assistant') return item;
     const next = { ...item, interrupted: undefined };
     if (action.kind === 'content') next.text += action.text;
     else next.reasoning += action.text;
@@ -34,12 +31,14 @@ function App() {
   const [state, dispatch] = useReducer(reducer, undefined);
   const [announcement, setAnnouncement] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const insertRef = useRef<(text: string) => void>(() => undefined);
 
   useEffect(() => {
     const onMessage = (e: MessageEvent<ToWebview>) => {
       const msg = e.data;
-      if (msg.type === 'state' || msg.type === 'delta') dispatch(msg);
+      if (msg.type === 'state' || msg.type === 'delta' || msg.type === 'toolUpdate') dispatch(msg);
       else if (msg.type === 'focusInput') inputRef.current?.focus();
+      else if (msg.type === 'insertText') insertRef.current(msg.text);
     };
     window.addEventListener('message', onMessage);
     post({ type: 'ready' });
@@ -48,11 +47,15 @@ function App() {
 
   const busy = state?.busy ?? false;
   const prevBusy = useRef(busy);
+  const waiting = state?.transcript.some((t) => (t.kind === 'tool' && t.status === 'awaiting-approval') || (t.kind === 'question' && t.status === 'open')) ?? false;
   useEffect(() => {
-    if (busy && !prevBusy.current) setAnnouncement('Assistant is responding.');
+    if (waiting) setAnnouncement('The agent is waiting for your input.');
+  }, [waiting]);
+  useEffect(() => {
+    if (busy && !prevBusy.current) setAnnouncement('Agent is working.');
     if (!busy && prevBusy.current) {
       const last = state?.transcript[state.transcript.length - 1];
-      setAnnouncement(last?.kind === 'error' ? `Error: ${last.text}` : 'Response complete.');
+      setAnnouncement(last?.kind === 'error' ? `Error: ${last.text}` : 'Agent finished.');
     }
     prevBusy.current = busy;
   }, [busy, state]);
@@ -65,7 +68,8 @@ function App() {
       {!state.noticeAcknowledged && <Notice />}
       <Connection state={state} />
       <Transcript items={state.transcript} />
-      <Composer busy={busy} disabled={!state.selectedModel} inputRef={inputRef} />
+      <TodoPanel todos={state.todos} />
+      <Composer busy={busy} disabled={!state.selectedModel} mode={state.mode} inputRef={inputRef} insertRef={insertRef} />
       <div class="sr-only" role="status" aria-live="polite">
         {announcement}
       </div>
@@ -106,6 +110,14 @@ function Header({ state }: { state: ViewState }) {
               onChange={(e) => post({ type: 'setModelLocal', id: selected.id, local: (e.target as HTMLInputElement).checked })}
             />
             Runs on infrastructure I control
+          </label>
+          <label class="checkbox" title="Turning thinking off asks Ollama models to skip their reasoning phase. Much faster, but planning quality may drop.">
+            <input
+              type="checkbox"
+              checked={selected.thinking}
+              onChange={(e) => post({ type: 'setModelThinking', id: selected.id, thinking: (e.target as HTMLInputElement).checked })}
+            />
+            Thinking
           </label>
           <ContextMeter state={state} />
         </div>
@@ -252,6 +264,10 @@ function Item({ item }: { item: TranscriptItem }) {
       );
     case 'assistant':
       return <AssistantItem item={item} />;
+    case 'tool':
+      return <ToolCard item={item} />;
+    case 'question':
+      return <QuestionCard item={item} />;
     case 'error':
       return (
         <div class="banner banner-error" role="alert">
@@ -271,6 +287,11 @@ function Item({ item }: { item: TranscriptItem }) {
               {item.action === 'retry' && (
                 <button class="btn" onClick={() => post({ type: 'retry' })}>
                   Retry
+                </button>
+              )}
+              {item.action === 'continue' && (
+                <button class="btn" onClick={() => post({ type: 'continue' })}>
+                  Continue
                 </button>
               )}
             </div>
@@ -309,12 +330,34 @@ function AssistantItem({ item }: { item: Extract<TranscriptItem, { kind: 'assist
   );
 }
 
-function Composer({ busy, disabled, inputRef }: { busy: boolean; disabled: boolean; inputRef: RefObject<HTMLTextAreaElement> }) {
+const MODES: { id: AgentMode; label: string; hint: string }[] = [
+  { id: 'ask', label: 'Ask before edits', hint: 'Every file change and every command that is not allow-listed asks for approval.' },
+  { id: 'auto', label: 'Auto-accept edits', hint: 'File changes inside the workspace apply immediately. Commands still ask unless allow-listed.' },
+];
+
+function Composer({
+  busy,
+  disabled,
+  mode,
+  inputRef,
+  insertRef,
+}: {
+  busy: boolean;
+  disabled: boolean;
+  mode: AgentMode;
+  inputRef: RefObject<HTMLTextAreaElement>;
+  insertRef: RefObject<(text: string) => void>;
+}) {
   const [text, setText] = useState(() => {
     const saved = vscode.getState() as { draft?: string } | undefined;
     return saved?.draft ?? '';
   });
   useEffect(() => vscode.setState({ draft: text }), [text]);
+  insertRef.current = (insert: string) => {
+    setText((prev) => (prev && !prev.endsWith('\n') && !prev.endsWith(' ') ? `${prev}\n${insert}` : `${prev}${insert}`));
+    inputRef.current?.focus();
+  };
+  const currentMode = MODES.find((m) => m.id === mode) ?? MODES[0]!;
   const send = () => {
     if (busy || disabled || !text.trim()) return;
     post({ type: 'send', text });
@@ -344,6 +387,16 @@ function Composer({ busy, disabled, inputRef }: { busy: boolean; disabled: boole
         onKeyDown={onKeyDown}
       />
       <div class="composer-actions">
+        <label class="sr-only" for="mode">
+          Permission mode
+        </label>
+        <select id="mode" class="mode-select" value={mode} title={currentMode.hint} onChange={(e) => post({ type: 'setMode', mode: (e.target as HTMLSelectElement).value as AgentMode })}>
+          {MODES.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
         <span class="hint">{busy ? 'Esc to stop' : 'Ctrl+Enter to send'}</span>
         {busy ? (
           <button class="btn btn-danger" onClick={() => post({ type: 'stop' })}>

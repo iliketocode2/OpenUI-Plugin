@@ -14,6 +14,7 @@ export interface ModelOverride {
   contextSize?: number;
   vision?: boolean;
   local?: boolean;
+  thinking?: boolean;
 }
 
 export type ContextSource = 'setting' | 'server' | 'assumed';
@@ -26,6 +27,7 @@ export interface ResolvedModel {
   contextSource: ContextSource;
   toolMode: ToolMode;
   local: boolean;
+  thinking?: boolean;
   usageCapability?: boolean;
 }
 
@@ -85,5 +87,6 @@ export function resolveModel(server: ServerModel, override: ModelOverride | unde
     local: override?.local ?? false,
   };
   if (server.usageCapability !== undefined) resolved.usageCapability = server.usageCapability;
+  if (override?.thinking !== undefined) resolved.thinking = override.thinking;
   return resolved;
 }

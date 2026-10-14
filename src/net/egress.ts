@@ -1,3 +1,5 @@
+import { nodeTransport, type TransportInit } from './transport';
+
 export class EgressBlockedError extends Error {
   constructor(readonly url: string, reason: string) {
     super(`Blocked outbound request to ${url}: ${reason}`);
@@ -59,7 +61,7 @@ export interface EgressRequest {
   signal?: AbortSignal;
 }
 
-type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
+type FetchLike = (input: string, init: TransportInit) => Promise<Response>;
 
 const MAX_REDIRECTS = 3;
 
@@ -70,7 +72,7 @@ export class Egress {
     private readonly getBaseUrl: () => string,
     fetchImpl?: FetchLike,
   ) {
-    this.fetchImpl = fetchImpl ?? ((input, init) => fetch(input, init));
+    this.fetchImpl = fetchImpl ?? nodeTransport;
   }
 
   base(): BaseUrl {
@@ -94,9 +96,6 @@ export class Egress {
         headers: req.headers,
         body: req.body,
         signal: req.signal,
-        redirect: 'manual',
-        credentials: 'omit',
-        referrerPolicy: 'no-referrer',
       });
       if (res.status < 300 || res.status >= 400 || res.status === 304) return res;
       const location = res.headers.get('location');

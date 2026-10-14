@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 
 export type MockReply =
-  | { kind: 'sse'; chunks: (object | string)[]; delayMs?: number; dropAfter?: number; hangAfter?: number; done?: boolean }
+  | { kind: 'sse'; chunks: (object | string)[]; delayMs?: number; dropAfter?: number; hangAfter?: number; done?: boolean; headersDelayMs?: number }
   | { kind: 'raw'; text: string; contentType?: string; chunkSize?: number; delayMs?: number }
   | { kind: 'json'; body: unknown; status?: number; headers?: Record<string, string> }
   | { kind: 'redirect'; location: string; status?: number };
@@ -128,6 +128,7 @@ export class MockOwui {
         return;
       }
       case 'sse': {
+        if (r.headersDelayMs) await delay(r.headersDelayMs);
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
         res.flushHeaders();
         for (const [i, c] of r.chunks.entries()) {
