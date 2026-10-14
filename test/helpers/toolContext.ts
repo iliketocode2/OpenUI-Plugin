@@ -26,6 +26,7 @@ export interface TestEnv {
   ctx: ToolContext;
   updates: ToolCardUpdate[];
   todos: TodoItem[][];
+  createdDirs: string[];
   processes: ProcessManager;
   controller: AbortController;
   run<A>(tool: Tool<A>, args: A): Promise<ToolResult & { access?: string; card?: ToolCardUpdate }>;
@@ -39,6 +40,7 @@ export async function createToolEnv(opts: { ripgrep?: string; vision?: boolean; 
   const scratchpad = await mkdtemp(path.join(tmpdir(), 'owui tools scratch '));
   const updates: ToolCardUpdate[] = [];
   const todos: TodoItem[][] = [];
+  const createdDirs: string[] = [];
   const processes = new ProcessManager();
   const controller = new AbortController();
   const ctx: ToolContext = {
@@ -56,6 +58,8 @@ export async function createToolEnv(opts: { ripgrep?: string; vision?: boolean; 
     setTodos: (t) => todos.push(t),
     beforeWrite: async () => undefined,
     presentPlan: async () => ({ approved: true, mode: 'ask' }),
+    skills: [],
+    workspaceDirCreated: (dir) => createdDirs.push(dir),
   };
   return {
     workspace,
@@ -63,6 +67,7 @@ export async function createToolEnv(opts: { ripgrep?: string; vision?: boolean; 
     ctx,
     updates,
     todos,
+    createdDirs,
     processes,
     controller,
     async run(tool, args) {

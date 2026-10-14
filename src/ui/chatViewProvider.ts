@@ -37,6 +37,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         this.pendingTools.set(id, { ...this.pendingTools.get(id), ...patch });
         this.schedule();
       },
+      history: (entries, query) => this.post({ type: 'history', entries, query }),
     });
   }
 
@@ -60,6 +61,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   focusInput(): void {
     this.post({ type: 'focusInput' });
+  }
+
+  async showHistory(): Promise<void> {
+    if (!this.view) await vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
+    this.view?.show(true);
+    this.post({ type: 'showHistory' });
+    await this.controller.listHistory();
   }
 
   async insertText(text: string): Promise<void> {
@@ -124,6 +132,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         return;
       case 'openFile':
         await openFile(m.path);
+        return;
+      case 'listHistory':
+        await this.controller.listHistory(m.query);
+        return;
+      case 'resumeSession':
+        await this.controller.resumeSession(m.id);
+        return;
+      case 'renameSession':
+        await this.controller.renameSession(m.id);
+        return;
+      case 'deleteSession':
+        await this.controller.deleteSession(m.id);
+        return;
+      case 'exportSession':
+        await this.controller.exportSession(m.id);
         return;
       case 'openDiff':
         await openDiff(this.controller.diffs, m.diffId);

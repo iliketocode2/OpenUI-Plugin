@@ -8,6 +8,9 @@ import { RESULT_TAG, TextToolParser, describeToolsForText, extractCallsIgnoringF
 import { checkTruncation, measurePrompt, outputReserve, preflight, type TokenCalibrator } from '../owui/tokens';
 import type { AssistantTurn, ContentPart, Usage, WireMessage } from '../owui/types';
 import type { CheckpointManager, PlannedChange, RewindResult } from '../checkpoints/checkpoints';
+import { describeSkills, type Skill } from '../skills/discovery';
+import type { SessionRecord } from '../storage/history';
+import { COMPACTION_PROMPT, compact } from './compaction';
 import type { DiffStore } from '../diff/diffStore';
 import type {
   AgentMode,
@@ -66,6 +69,8 @@ export interface RunContext {
   onToolsUnsupported(): void;
   addAllowlistEntry(entry: string): Promise<void>;
   setMode(mode: AgentMode): Promise<void>;
+  loadContext(): Promise<{ sections: string[]; skills: Skill[] }>;
+  onWorkspaceDirCreated(dir: string): void;
 }
 
 interface PendingCall {
@@ -97,6 +102,10 @@ export class AgentSession {
   private readonly plans = new Map<string, (answer: PlanAnswer | undefined) => void>();
   private readonly turnStarts = new Map<string, { wire: number; transcript: number }>();
   private runCheckpoint: string | undefined;
+  private contextSections: string[] = [];
+  private skills: Skill[] = [];
+  approvedPlan: string | undefined;
+  created: number = Date.now();
   private lastCallKey = '';
   private repeatCount = 0;
 
@@ -147,6 +156,15 @@ export class AgentSession {
     if (!item || item.kind !== 'user') return undefined;
     let result: RewindResult | undefined;
     if (scope !== 'conversation' && item.checkpoint) result = await this.env.checkpoints.rewind(item.checkpoint);
+    if (scope !== 'code' && !this.turnStarts.has(userItemId)) {
+      this.pushWarning(
+        result
+          ? 'The code was rewound, but the conversation before that message was compacted into a summary, so it could not be rewound. Start a new session if the model should forget it.'
+          : 'The conversation before that message was compacted into a summary, so it cannot be rewound. Start a new session if the model should forget it.',
+      );
+      this.events.changed();
+      return result ? { text: '', result } : undefined;
+    }
     if (scope !== 'code') {
       const start = this.turnStarts.get(userItemId);
       if (start) {
@@ -167,7 +185,7 @@ export class AgentSession {
 
   async reviewDecision(itemId: string, absolute: string | undefined, decision: 'keep' | 'revert'): Promise<void> {
     const item = this.transcript.find((t) => t.id === itemId);
-    if (!item || item.kind !== 'review') return;
+    if (!item || item.kind !== 'review' || this.busy) return;
     for (const f of item.files) {
       if (f.decision || (absolute && f.absolute !== absolute)) continue;
       if (decision === 'revert') await this.env.checkpoints.revertFile(item.checkpoint, f.absolute);
@@ -201,6 +219,7 @@ export class AgentSession {
     this.runCheckpoint = cp.id;
     if (cp.snapshotError) ctx.warnOnce(`checkpoint:${this.id}`, `Workspace snapshots are unavailable (${cp.snapshotError}). Rewind will only undo files the agent edited, not changes made by commands.`);
     this.wire.push({ role: 'user', content: trimmed });
+    await this.refreshContext(ctx);
     if (this.controller.signal.aborted) {
       this.controller = undefined;
       this.events.changed();
@@ -213,14 +232,174 @@ export class AgentSession {
 
   async resume(ctx: RunContext): Promise<void> {
     if (!this.canResume()) return;
+    if (!this.contextSections.length) await this.refreshContext(ctx);
     await this.run(ctx);
   }
 
   async dispose(): Promise<void> {
     this.stop();
     await this.env.processes.stopAll();
-    await this.env.checkpoints.dispose();
   }
+
+  async compactNow(ctx: RunContext): Promise<void> {
+    if (this.busy) return;
+    if (this.wire.length < 3) {
+      this.pushNotice('Nothing to compact yet.');
+      this.events.changed();
+      return;
+    }
+    this.controller = new AbortController();
+    this.events.changed();
+    try {
+      if (!this.contextSections.length) await this.refreshContext(ctx);
+      await this.maybeCompact(ctx, ctx.mode(), ctx.toolMode, this.controller.signal, true);
+    } finally {
+      this.controller = undefined;
+      this.events.changed();
+    }
+  }
+
+  toRecord(title: string, model: string | undefined, mode: AgentMode): SessionRecord {
+    const record: SessionRecord = {
+      version: 1,
+      id: this.id,
+      title,
+      created: this.created,
+      updated: Date.now(),
+      mode,
+      transcript: this.transcript,
+      wire: this.wire,
+      todos: this.todos,
+      checkpoints: this.env.checkpoints.serialize(),
+      scratchpad: this.env.scratchpad,
+      turns: [...this.turnStarts],
+    };
+    if (model) record.model = model;
+    if (this.approvedPlan) record.approvedPlan = this.approvedPlan;
+    return record;
+  }
+
+  restore(record: SessionRecord): void {
+    this.created = record.created;
+    this.transcript.splice(0, this.transcript.length, ...record.transcript);
+    this.wire.splice(0, this.wire.length, ...record.wire);
+    this.todos = record.todos ?? [];
+    this.approvedPlan = record.approvedPlan;
+    this.env.checkpoints.restore(record.checkpoints ?? []);
+    this.turnStarts.clear();
+    for (const [id, start] of record.turns ?? []) this.turnStarts.set(id, start);
+    for (const t of this.transcript) {
+      if (t.kind === 'tool' && (t.status === 'awaiting-approval' || t.status === 'running' || t.status === 'pending')) {
+        t.status = 'cancelled';
+        t.approval = undefined;
+      }
+      if ((t.kind === 'question' || t.kind === 'plan') && t.status === 'open') t.status = 'cancelled';
+      if (t.kind === 'assistant' && t.streaming) {
+        t.streaming = false;
+        t.stopped = true;
+      }
+    }
+    const answered = new Set(this.wire.filter((m) => m.role === 'tool').map((m) => m.tool_call_id));
+    for (let i = 0; i < this.wire.length; i++) {
+      const m = this.wire[i]!;
+      if (m.role !== 'assistant' || !m.tool_calls?.length) continue;
+      const missing = m.tool_calls.filter((c) => !answered.has(c.id));
+      if (!missing.length) continue;
+      let at = i + 1;
+      while (at < this.wire.length && this.wire[at]!.role === 'tool') at++;
+      this.wire.splice(at, 0, ...missing.map((c) => ({ role: 'tool' as const, tool_call_id: c.id, content: 'Not run: the session was closed before this tool finished.' })));
+      for (const [id, start] of this.turnStarts) if (start.wire >= at) this.turnStarts.set(id, { ...start, wire: start.wire + missing.length });
+    }
+  }
+
+  private async refreshContext(ctx: RunContext): Promise<void> {
+    try {
+      const loaded = await ctx.loadContext();
+      this.contextSections = loaded.sections;
+      this.skills = loaded.skills;
+    } catch {
+      this.contextSections = [];
+      this.skills = [];
+    }
+  }
+
+  private systemMessage(ctx: RunContext, mode: AgentMode, toolMode: 'native' | 'text', defs: ReturnType<ToolRegistry['definitions']>): string {
+    const parts = [ctx.systemPrompt(mode), ...this.contextSections];
+    const skills = describeSkills(this.skills);
+    if (skills) parts.push(skills);
+    if (this.approvedPlan) parts.push(`# Approved plan\nThe user approved this plan. Follow it, and tell the user about any deviation.\n\n${this.approvedPlan}`);
+    if (this.todos.length) {
+      const mark = (s: TodoItem['status']) => (s === 'completed' ? 'x' : s === 'in_progress' ? '~' : ' ');
+      parts.push(`# Current task list\n${this.todos.map((t) => `- [${mark(t.status)}] ${t.content}`).join('\n')}`);
+    }
+    if (toolMode === 'text') parts.push(describeToolsForText(defs));
+    return parts.join('\n\n');
+  }
+
+  private async maybeCompact(ctx: RunContext, mode: AgentMode, toolMode: 'native' | 'text', signal: AbortSignal, force = false): Promise<void> {
+    const defs = this.env.tools.definitions(toolsForMode(this.env.tools.list(), mode));
+    const fixed = measurePrompt([{ role: 'system', content: this.systemMessage(ctx, mode, toolMode, defs) }], toolMode === 'native' ? defs : undefined);
+    const fixedTokens = ctx.calibrator.estimate(ctx.model.id, fixed);
+    const budget = Math.max(1, ctx.model.contextSize - outputReserve(ctx.model.contextSize) - fixedTokens);
+    const estimate = (msgs: WireMessage[]) => ctx.calibrator.estimate(ctx.model.id, measurePrompt(msgs));
+    if (!force && estimate(this.wire) < budget * 0.8) return;
+    const cpt = ctx.calibrator.charsPerToken(ctx.model.id);
+    const summarize = async (transcript: string, previous: string | undefined): Promise<string> => {
+      const content = previous ? `Previous summary:\n${previous}\n\nNext part of the transcript:\n${transcript}` : transcript;
+      const turn = await this.env.client.chat(
+        {
+          model: ctx.model.id,
+          messages: [
+            { role: 'system', content: COMPACTION_PROMPT },
+            { role: 'user', content },
+          ],
+          ...(ctx.model.thinking !== undefined ? { think: ctx.model.thinking } : {}),
+          ...(ctx.model.contextSource === 'setting' ? { numCtx: ctx.model.contextSize } : {}),
+        },
+        {},
+        signal,
+      );
+      const text = stripThinkTags(turn.content).trim();
+      if (!text) throw new Error('the model returned an empty summary');
+      return text;
+    };
+    const notice: Extract<TranscriptItem, { kind: 'notice' }> = { id: randomUUID(), kind: 'notice', ts: Date.now(), text: 'Compacting the conversation to fit the context window…' };
+    this.transcript.push(notice);
+    this.events.changed();
+    const startLength = this.wire.length;
+    let result;
+    try {
+      result = await compact(
+        this.wire,
+        { estimate, summarize },
+        { budget, threshold: 0.8, target: force ? 0.3 : 0.5, keepRecent: 6, maxChunkChars: Math.max(4000, Math.floor(budget * cpt * 0.5)), force },
+      );
+    } catch (e) {
+      notice.text = signal.aborted ? 'Compaction cancelled.' : `Compaction failed: ${(e as Error).message}. The conversation was left unchanged.`;
+      this.events.changed();
+      return;
+    }
+    if (result.stage === 'none') {
+      notice.text = 'Compaction found nothing to shrink.';
+      this.events.changed();
+      return;
+    }
+    const appended = this.wire.slice(startLength);
+    if (result.stage === 'summarized') {
+      const headLength = result.wire.length - (startLength - result.summarizedMessages);
+      for (const [id, start] of [...this.turnStarts]) {
+        if (start.wire < result.summarizedMessages) this.turnStarts.delete(id);
+        else this.turnStarts.set(id, { ...start, wire: start.wire - result.summarizedMessages + headLength });
+      }
+    }
+    this.wire.splice(0, this.wire.length, ...result.wire, ...appended);
+    notice.text =
+      result.stage === 'summarized'
+        ? `Compacted the conversation: summarized ${result.summarizedMessages} earlier messages (about ${result.before} → ${result.after} tokens). They stay visible here, but the model now sees a summary.`
+        : `Shortened old tool output to save context (about ${result.before} → ${result.after} tokens).`;
+    this.events.changed();
+  }
+
 
   private async run(ctx: RunContext): Promise<void> {
     this.controller ??= new AbortController();
@@ -280,8 +459,10 @@ export class AgentSession {
 
   private async modelTurn(ctx: RunContext, toolMode: 'native' | 'text', signal: AbortSignal): Promise<{ calls: PendingCall[] } | 'switch-to-text' | undefined> {
     const mode = ctx.mode();
+    await this.maybeCompact(ctx, mode, toolMode, signal);
+    if (signal.aborted) return undefined;
     const defs = this.env.tools.definitions(toolsForMode(this.env.tools.list(), mode));
-    const system = ctx.systemPrompt(mode) + (toolMode === 'text' ? `\n\n${describeToolsForText(defs)}` : '');
+    const system = this.systemMessage(ctx, mode, toolMode, defs);
     const messages: WireMessage[] = [{ role: 'system', content: system }, ...this.wire];
     const size = measurePrompt(messages, toolMode === 'native' ? defs : undefined);
     const estimate = ctx.calibrator.estimate(ctx.model.id, size);
@@ -475,7 +656,7 @@ export class AgentSession {
       card.status = 'awaiting-approval';
       card.approval = decision.request;
       this.events.changed();
-      const answer = await new Promise<ApprovalDecision>((resolve) => this.approvals.set(card.id, resolve));
+      const answer = await waitFor<ApprovalDecision>(signal, { decision: 'deny' }, (resolve) => this.approvals.set(card.id, resolve));
       this.approvals.delete(card.id);
       card.approval = undefined;
       if (signal.aborted) return finish('cancelled', { content: 'Cancelled by the user.', isError: true });
@@ -518,6 +699,8 @@ export class AgentSession {
       },
       ask: (questions) => this.ask(questions, signal),
       beforeWrite: (absolute) => this.env.checkpoints.recordBeforeWrite(absolute),
+      skills: this.skills,
+      workspaceDirCreated: (dir) => ctx.onWorkspaceDirCreated(dir),
       presentPlan: (plan) => this.presentPlan(plan, ctx, signal),
       setTodos: (todos) => {
         this.todos = todos;
@@ -530,7 +713,7 @@ export class AgentSession {
     const item: Extract<TranscriptItem, { kind: 'plan' }> = { id: randomUUID(), kind: 'plan', ts: Date.now(), plan, status: 'open' };
     this.transcript.push(item);
     this.events.changed();
-    const answer = signal.aborted ? undefined : await new Promise<PlanAnswer | undefined>((resolve) => this.plans.set(item.id, resolve));
+    const answer = await waitFor<PlanAnswer | undefined>(signal, undefined, (resolve) => this.plans.set(item.id, resolve));
     this.plans.delete(item.id);
     if (!answer) {
       item.status = 'cancelled';
@@ -539,6 +722,7 @@ export class AgentSession {
     }
     if (answer.approved) {
       item.status = 'approved';
+      this.approvedPlan = plan;
       item.approvedMode = answer.mode;
       await ctx.setMode(answer.mode);
     } else {
@@ -553,7 +737,7 @@ export class AgentSession {
     const item: QuestionItem = { id: randomUUID(), kind: 'question', ts: Date.now(), questions, status: 'open' };
     this.transcript.push(item);
     this.events.changed();
-    const answers = signal.aborted ? undefined : await new Promise<string[][] | undefined>((resolve) => this.questions.set(item.id, resolve));
+    const answers = await waitFor<string[][] | undefined>(signal, undefined, (resolve) => this.questions.set(item.id, resolve));
     this.questions.delete(item.id);
     if (!answers) {
       item.status = 'cancelled';
@@ -598,6 +782,10 @@ export class AgentSession {
     if (i !== -1) this.transcript.splice(i, 1);
   }
 
+  private pushNotice(text: string): void {
+    this.transcript.push({ id: randomUUID(), kind: 'notice', text, ts: Date.now() });
+  }
+
   private pushWarning(text: string): void {
     this.transcript.push({ id: randomUUID(), kind: 'warning', text, ts: Date.now() });
   }
@@ -607,6 +795,18 @@ export class AgentSession {
     if (action) err.action = action;
     this.transcript.push(err);
   }
+}
+
+function waitFor<T>(signal: AbortSignal, onAbort: T, register: (resolve: (value: T) => void) => void): Promise<T> {
+  if (signal.aborted) return Promise.resolve(onAbort);
+  return new Promise<T>((resolve) => {
+    const abort = () => resolve(onAbort);
+    signal.addEventListener('abort', abort, { once: true });
+    register((value) => {
+      signal.removeEventListener('abort', abort);
+      resolve(value);
+    });
+  });
 }
 
 function truncateLabel(text: string): string {

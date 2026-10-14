@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -8,6 +9,9 @@ import { ShadowGit } from '../checkpoints/shadowGit';
 import type { ApiKeyStore } from '../config/secrets';
 import { addAllowlistEntry, readSettings, updateModelOverride } from '../config/settings';
 import { DiffStore } from '../diff/diffStore';
+import { OWUI_DIR, loadProjectContext } from '../memory/projectMemory';
+import { discoverSkills } from '../skills/discovery';
+import { sanitizeForStorage, toMarkdown, titleFrom, type HistoryStore, type SessionRecord } from '../storage/history';
 import { isInsecureRemote, parseBaseUrl } from '../net/egress';
 import type { OwuiClient } from '../owui/client';
 import { HttpError, MissingApiKeyError } from '../owui/errors';
@@ -15,7 +19,7 @@ import { resolveModel, type ResolvedModel, type ServerModel } from '../owui/mode
 import type { StreamDelta } from '../owui/streamAssembler';
 import { TokenCalibrator, type CalibrationState } from '../owui/tokens';
 import type { Usage } from '../owui/types';
-import type { AgentMode, ApprovalDecision, ConnectionView, ModelView, PlanAnswer, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState } from '../shared/protocol';
+import type { AgentMode, ApprovalDecision, ConnectionView, HistoryEntry, ModelView, PlanAnswer, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState } from '../shared/protocol';
 import { scratchRoot } from '../storage/scratchpad';
 import type { ToolRegistry } from '../tools/registry';
 import { ProcessManager } from '../tools/shell/processManager';
@@ -42,6 +46,7 @@ export interface ControllerListener {
   state(state: ViewState): void;
   delta(id: string, delta: StreamDelta): void;
   toolUpdate(id: string, patch: ToolCardUpdate): void;
+  history(entries: HistoryEntry[], query: string): void;
 }
 
 export interface ControllerDeps {
@@ -56,6 +61,10 @@ export interface ControllerDeps {
   workspaceStorage: string | undefined;
   checkpointsEnabled: () => boolean;
   confirm(message: string, detail: string, action: string): Promise<boolean>;
+  history: HistoryStore;
+  backupsRoot: string;
+  workspaceState: vscode.Memento;
+  userSkillsDir: () => string;
 }
 
 export class AgentController implements vscode.Disposable {
@@ -68,6 +77,11 @@ export class AgentController implements vscode.Disposable {
   private readonly idle = new Set<() => void>();
   readonly diffs = new DiffStore();
   private shadow: ShadowGit | undefined;
+  private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  private saving: Promise<void> = Promise.resolve();
+  private dirty = false;
+  private firstUnsavedChange = 0;
+  private readonly deletedSessions = new Set<string>();
 
   constructor(private readonly deps: ControllerDeps) {
     this.calibrator = new TokenCalibrator(deps.globalState.get<Record<string, CalibrationState>>(STATE_CALIBRATION, {}));
@@ -151,8 +165,10 @@ export class AgentController implements vscode.Disposable {
   }
 
   newSession(): void {
+    void this.saveNow();
     void this.session.dispose();
     this.session = this.newAgentSession();
+    this.titleOverride = undefined;
     this.emitState();
   }
 
@@ -169,6 +185,10 @@ export class AgentController implements vscode.Disposable {
   }
 
   async review(itemId: string, absolute: string | undefined, decision: 'keep' | 'revert'): Promise<void> {
+    if (this.session.busy) {
+      void vscode.window.showWarningMessage('Wait until the agent has finished, or stop it, before reviewing changes.');
+      return;
+    }
     await this.session.reviewDecision(itemId, absolute, decision);
   }
 
@@ -212,6 +232,10 @@ export class AgentController implements vscode.Disposable {
   }
 
   async send(text: string): Promise<void> {
+    if (text.trim() === '/compact') {
+      await this.compact();
+      return;
+    }
     const ctx = this.runContext();
     if (!ctx) return;
     await this.session.send(text, ctx);
@@ -223,6 +247,184 @@ export class AgentController implements vscode.Disposable {
     if (!ctx) return;
     await this.session.resume(ctx);
     this.notifyIdle();
+  }
+
+  async compact(): Promise<void> {
+    const ctx = this.runContext();
+    if (!ctx) return;
+    await this.session.compactNow(ctx);
+  }
+
+  async listHistory(query = ''): Promise<void> {
+    const sessions = query.trim() ? await this.deps.history.search(query) : await this.deps.history.list();
+    const entries: HistoryEntry[] = sessions.map((s) => ({
+      id: s.id,
+      title: s.title,
+      updated: s.updated,
+      messages: s.messages,
+      preview: s.preview,
+      ...(s.match ? { match: s.match } : {}),
+    }));
+    this.listener?.history(entries, query);
+  }
+
+  async resumeSession(id: string): Promise<void> {
+    if (this.session.busy) {
+      void vscode.window.showWarningMessage('Stop the agent before switching sessions.');
+      return;
+    }
+    if (id === this.session.id) return;
+    const record = await this.deps.history.load(id);
+    if (!record) {
+      void vscode.window.showErrorMessage('That session could not be loaded.');
+      await this.listHistory();
+      return;
+    }
+    await this.saveNow();
+    void this.session.dispose();
+    this.session = this.newAgentSession(record);
+    this.titleOverride = record.title;
+    this.dirty = false;
+    this.emitState();
+  }
+
+  async renameSession(id: string): Promise<void> {
+    const record = id === this.session.id ? undefined : await this.deps.history.load(id);
+    const current = record?.title ?? this.titleOverride ?? titleFrom(this.session.transcript);
+    const title = await vscode.window.showInputBox({ title: 'Rename session', value: current, validateInput: (v) => (v.trim() ? undefined : 'The name cannot be empty.') });
+    if (!title?.trim()) return;
+    if (id === this.session.id) {
+      this.titleOverride = title.trim();
+      this.markDirty();
+      await this.saveNow();
+    } else {
+      await this.deps.history.rename(id, title);
+    }
+    await this.listHistory();
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    const ok = await this.deps.confirm('Delete this session?', 'Its conversation history and saved file backups are removed from this machine. This cannot be undone.', 'Delete');
+    if (!ok) return;
+    this.deletedSessions.add(id);
+    if (id === this.session.id) {
+      if (this.saveTimer) clearTimeout(this.saveTimer);
+      this.saveTimer = undefined;
+      this.dirty = false;
+      void this.session.dispose();
+      this.session = this.newAgentSession();
+      this.titleOverride = undefined;
+      this.emitState();
+    }
+    await this.saving;
+    await this.deps.history.delete(id);
+    await rm(this.backupDir(id), { recursive: true, force: true }).catch(() => undefined);
+    await this.listHistory();
+  }
+
+  async exportSession(id: string): Promise<void> {
+    const record = id === this.session.id ? this.currentRecord() : await this.deps.history.load(id);
+    if (!record) return;
+    const pick = await vscode.window.showQuickPick(
+      [
+        { label: 'Markdown', description: 'Readable transcript', ext: 'md' },
+        { label: 'JSON', description: 'Complete session data', ext: 'json' },
+      ],
+      { title: 'Export session as' },
+    );
+    if (!pick) return;
+    const base = record.title.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'session';
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
+    const target = await vscode.window.showSaveDialog({
+      title: 'Export session',
+      ...(folder ? { defaultUri: vscode.Uri.joinPath(folder, `${base}.${pick.ext}`) } : {}),
+      filters: pick.ext === 'md' ? { Markdown: ['md'] } : { JSON: ['json'] },
+    });
+    if (!target) return;
+    const content = pick.ext === 'md' ? toMarkdown(record) : JSON.stringify(sanitizeForStorage(record), null, 2);
+    await writeFile(target.fsPath, content, 'utf8');
+    void vscode.window.showInformationMessage(`Exported to ${target.fsPath}`);
+  }
+
+  async pruneOrphanBackups(maxAgeMs = 2 * 24 * 60 * 60 * 1000): Promise<void> {
+    const dir = this.deps.backupsRoot;
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return;
+    }
+    const known = new Set((await this.deps.history.list()).map((s) => s.id));
+    for (const name of names) {
+      if (known.has(name) || name === this.session.id) continue;
+      const full = path.join(dir, name);
+      const st = await stat(full).catch(() => undefined);
+      if (st && Date.now() - st.mtimeMs > maxAgeMs) await rm(full, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  workspaceDirCreated(dir: string): void {
+    void this.offerGitignore(dir);
+  }
+
+  private titleOverride: string | undefined;
+
+  private currentRecord(): SessionRecord | undefined {
+    if (!this.session.transcript.some((t) => t.kind === 'user')) return undefined;
+    return this.session.toRecord(this.titleOverride ?? titleFrom(this.session.transcript), this.selectedModel()?.id, this.mode);
+  }
+
+  private markDirty(): void {
+    if (!this.dirty) this.firstUnsavedChange = Date.now();
+    this.dirty = true;
+    this.scheduleSave();
+  }
+
+  private scheduleSave(): void {
+    if (!this.dirty) return;
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    const overdue = Date.now() - this.firstUnsavedChange > 10_000;
+    this.saveTimer = setTimeout(() => void this.saveNow(), overdue ? 0 : 1500);
+  }
+
+  saveNow(): Promise<void> {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = undefined;
+    if (!this.dirty) return this.saving;
+    const live = this.currentRecord();
+    if (!live || this.deletedSessions.has(live.id)) return this.saving;
+    const record = structuredClone(live);
+    this.dirty = false;
+    this.saving = this.saving
+      .then(() => (this.deletedSessions.has(record.id) ? undefined : this.deps.history.save(record)))
+      .catch(() => {
+        this.dirty = true;
+      });
+    return this.saving;
+  }
+
+  async flush(): Promise<void> {
+    await this.saveNow();
+    await this.saving;
+  }
+
+  private async offerGitignore(owuiDir: string): Promise<void> {
+    const key = 'owuiAgent.gitignoreOffer';
+    if (this.deps.workspaceState.get<string>(key) === 'never') return;
+    const root = path.dirname(owuiDir);
+    const gitignore = path.join(root, '.gitignore');
+    const existing = await readFile(gitignore, 'utf8').catch(() => '');
+    if (/^\/?\.owui\/?\s*$/m.test(existing)) return;
+    if (!existing && !existsSync(path.join(root, '.git'))) return;
+    const choice = await vscode.window.showInformationMessage(
+      'OWUI Agent created a .owui folder for project memory and skills. Add it to .gitignore? Keep it out if it is personal; commit it if your team should share the memory.',
+      'Add to .gitignore',
+      'Not now',
+      'Never for this workspace',
+    );
+    if (choice === 'Never for this workspace') await this.deps.workspaceState.update(key, 'never');
+    if (choice !== 'Add to .gitignore') return;
+    await appendFile(gitignore, `${existing && !existing.endsWith('\n') ? '\n' : ''}.owui/\n`, 'utf8');
   }
 
   whenIdle(): Promise<void> {
@@ -242,6 +444,7 @@ export class AgentController implements vscode.Disposable {
       contextSource: m.contextSource,
     }));
     const state: ViewState = {
+      sessionId: this.session.id,
       connection: this.connection,
       models,
       busy: this.session.busy,
@@ -262,6 +465,7 @@ export class AgentController implements vscode.Disposable {
   }
 
   dispose(): void {
+    void this.flush();
     void this.session.dispose();
   }
 
@@ -313,6 +517,15 @@ export class AgentController implements vscode.Disposable {
       },
       addAllowlistEntry: (entry) => addAllowlistEntry(entry),
       setMode: (mode) => this.setMode(mode),
+      loadContext: async () => {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const roots: { dir: string; source: 'workspace' | 'user' }[] = [];
+        if (root) roots.push({ dir: path.join(root, OWUI_DIR, 'skills'), source: 'workspace' });
+        roots.push({ dir: this.deps.userSkillsDir(), source: 'user' });
+        const [sections, skills] = await Promise.all([loadProjectContext(root), discoverSkills(roots)]);
+        return { sections, skills };
+      },
+      onWorkspaceDirCreated: (dir) => this.workspaceDirCreated(dir),
     };
   }
 
@@ -325,9 +538,9 @@ export class AgentController implements vscode.Disposable {
     if (persistent) void this.deps.globalState.update(STATE_WARNED, [...warned, key]);
   }
 
-  private newAgentSession(): AgentSession {
-    const id = randomUUID();
-    const scratchpad = path.join(scratchRoot(this.deps.globalStorage), `${new Date().toISOString().slice(0, 10)}-${id.slice(0, 8)}`);
+  private newAgentSession(record?: SessionRecord): AgentSession {
+    const id = record?.id ?? randomUUID();
+    const scratchpad = record?.scratchpad ?? path.join(scratchRoot(this.deps.globalStorage), `${new Date().toISOString().slice(0, 10)}-${id.slice(0, 8)}`);
     void mkdir(scratchpad, { recursive: true }).catch(() => undefined);
     const session = new AgentSession(
       {
@@ -338,18 +551,32 @@ export class AgentController implements vscode.Disposable {
         processes: new ProcessManager(),
         scratchpad,
         ripgrep: this.deps.ripgrep,
-        checkpoints: new CheckpointManager(this.shadowGit(), path.join(this.deps.globalStorage, 'backups', id)),
+        checkpoints: new CheckpointManager(this.shadowGit(), this.backupDir(id)),
         diffs: this.diffs,
       },
       {
-        changed: () => this.emitState(),
-        delta: (itemId, d) => this.listener?.delta(itemId, d),
-        toolUpdate: (itemId, patch) => this.listener?.toolUpdate(itemId, patch),
+        changed: () => {
+          if (this.session === session) this.markDirty();
+          this.emitState();
+        },
+        delta: (itemId, d) => {
+          if (this.session === session) this.markDirty();
+          this.listener?.delta(itemId, d);
+        },
+        toolUpdate: (itemId, patch) => {
+          if (this.session === session) this.markDirty();
+          this.listener?.toolUpdate(itemId, patch);
+        },
         usage: (model, usage) => this.recordTotals(model, usage),
       },
       id,
     );
+    if (record) session.restore(record);
     return session;
+  }
+
+  private backupDir(id: string): string {
+    return path.join(this.deps.backupsRoot, id);
   }
 
   private shadowGit(): ShadowGit | undefined {

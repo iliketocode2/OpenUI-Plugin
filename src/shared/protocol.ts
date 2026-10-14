@@ -77,7 +77,8 @@ export type TranscriptItem =
   | { id: string; kind: 'plan'; ts: number; plan: string; status: 'open' | 'approved' | 'revise' | 'cancelled'; approvedMode?: AgentMode; feedback?: string }
   | { id: string; kind: 'review'; ts: number; checkpoint: string; files: ReviewFile[]; status: 'open' | 'done' }
   | { id: string; kind: 'error'; text: string; ts: number; action?: 'setApiKey' | 'openSettings' | 'retry' | 'continue' }
-  | { id: string; kind: 'warning'; text: string; ts: number };
+  | { id: string; kind: 'warning'; text: string; ts: number }
+  | { id: string; kind: 'notice'; text: string; ts: number };
 
 export interface ReviewFile {
   absolute: string;
@@ -99,7 +100,17 @@ export interface ConnectionView {
   serverVersion?: string;
 }
 
+export interface HistoryEntry {
+  id: string;
+  title: string;
+  updated: number;
+  messages: number;
+  preview: string;
+  match?: string;
+}
+
 export interface ViewState {
+  sessionId: string;
   connection: ConnectionView;
   models: ModelView[];
   selectedModel?: string;
@@ -117,6 +128,8 @@ export type ToWebview =
   | { type: 'delta'; id: string; kind: 'content' | 'reasoning'; text: string }
   | { type: 'toolUpdate'; id: string; patch: ToolCardUpdate }
   | { type: 'insertText'; text: string }
+  | { type: 'history'; entries: HistoryEntry[]; query: string }
+  | { type: 'showHistory' }
   | { type: 'focusInput' };
 
 export type FromWebview =
@@ -141,4 +154,9 @@ export type FromWebview =
   | { type: 'planDecision'; id: string; answer: PlanAnswer }
   | { type: 'rewind'; itemId: string; scope: RewindScope }
   | { type: 'review'; id: string; absolute?: string; decision: 'keep' | 'revert' }
-  | { type: 'openLink'; href: string };
+  | { type: 'openLink'; href: string }
+  | { type: 'listHistory'; query: string }
+  | { type: 'resumeSession'; id: string }
+  | { type: 'renameSession'; id: string }
+  | { type: 'deleteSession'; id: string }
+  | { type: 'exportSession'; id: string }

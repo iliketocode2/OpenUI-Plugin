@@ -1,3 +1,5 @@
+import * as os from 'node:os';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { ModelOverride } from '../owui/models';
 
@@ -17,6 +19,7 @@ export interface Settings {
   maxIterations: number;
   scratchpadRetentionDays: number;
   checkpointsEnabled: boolean;
+  userSkillsDir: string;
 }
 
 export function readSettings(): Settings {
@@ -35,6 +38,7 @@ export function readSettings(): Settings {
     maxIterations: c.get<number>('agent.maxIterations', 50),
     scratchpadRetentionDays: c.get<number>('scratchpad.retentionDays', 7),
     checkpointsEnabled: c.get<boolean>('checkpoints.enabled', true),
+    userSkillsDir: expandHome(c.get<string>('skills.userDir', '') || path.join(os.homedir(), '.owui-agent', 'skills')),
   };
 }
 
@@ -58,4 +62,8 @@ export function onSettingsChanged(listener: () => void): vscode.Disposable {
   return vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration(SECTION)) listener();
   });
+}
+
+function expandHome(p: string): string {
+  return p === '~' || p.startsWith('~/') || p.startsWith('~\\') ? path.join(os.homedir(), p.slice(1)) : p;
 }

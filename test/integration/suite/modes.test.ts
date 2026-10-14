@@ -63,7 +63,13 @@ describe('OWUI Agent plan mode, diffs and rewind (integration)', () => {
       call('Implementing.', { name: 'write_file', arguments: { path: 'planned.txt', content: 'from the plan\n' } }),
       say('Done. Tested: nothing to test.'),
     );
-    await api.controller.send('Plan, then create planned.txt');
+    const finished = await Promise.race([api.controller.send('Plan, then create planned.txt').then(() => true), new Promise<false>((r) => setTimeout(() => r(false), 40_000))]);
+    assert.ok(
+      finished,
+      `send did not finish: mode=${api.controller.mode} toolOutputs=${JSON.stringify(items('tool').map((t) => t.output ?? ''))} busy=${api.controller.viewState().busy} key=${!!(await api.keys.get())} requests=${mock.chatRequests().length} pending=${mock.pending()} ${JSON.stringify(
+        api.controller.viewState().transcript.map((t) => [t.kind, 'text' in t ? t.text.slice(0, 160) : 'title' in t ? `${t.title} ${t.status}` : 'status' in t ? t.status : '']),
+      )}`,
+    );
     assert.equal(api.controller.mode, 'auto');
     assert.equal(items('plan')[0]?.status, 'approved');
     assert.equal(await readFile(path.join(ws, 'planned.txt'), 'utf8'), 'from the plan\n');
@@ -78,7 +84,7 @@ describe('OWUI Agent plan mode, diffs and rewind (integration)', () => {
     mock.enqueue(call('', { name: 'edit_file', arguments: { path: 'diffme.txt', old_string: 'alpha', new_string: 'beta' } }), say('ok'));
     await api.controller.send('edit diffme');
     const card = items('tool')[0]!;
-    assert.ok(card.diffId);
+    assert.ok(card?.diffId, JSON.stringify(api.controller.viewState().transcript.map((t) => [t.kind, 'text' in t ? t.text.slice(0, 160) : 'title' in t ? `${t.title} ${t.status} ${t.output ?? ''}`.slice(0, 300) : ''])));
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     await api.provider['onMessage']({ type: 'openDiff', diffId: card.diffId });
     const tab = vscode.window.tabGroups.activeTabGroup.activeTab;

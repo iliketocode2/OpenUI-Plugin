@@ -44,7 +44,6 @@ describe('OWUI Agent chat (integration)', () => {
   });
 
   after(async () => {
-    await api?.keys.clear();
     await mock?.stop();
   });
 
@@ -114,7 +113,7 @@ describe('OWUI Agent chat (integration)', () => {
     await api.controller.send('one');
     await api.controller.send('two');
     const warnings = transcript().filter((t) => t.kind === 'warning' && /Usage/.test(t.text));
-    assert.equal(warnings.length, 1);
+    assert.equal(warnings.length, 1, JSON.stringify(transcript().map((t) => [t.kind, 'text' in t ? t.text.slice(0, 120) : ''])));
     api.controller.newSession();
     mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: 'three' }) });
     await api.controller.send('three');
@@ -135,7 +134,8 @@ describe('OWUI Agent chat (integration)', () => {
   it('stops a streaming reply and keeps the partial text', async () => {
     mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: 'one two three four five six seven eight', pieces: 8 }), delayMs: 150 });
     const done = api.controller.send('count slowly');
-    await new Promise((r) => setTimeout(r, 400));
+    const streamed = () => transcript().some((t) => t.kind === 'assistant' && t.text.length > 0);
+    for (let waited = 0; !streamed() && waited < 10_000; waited += 25) await new Promise((r) => setTimeout(r, 25));
     api.controller.stop();
     await done;
     const item = last('assistant');

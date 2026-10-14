@@ -76,6 +76,27 @@
         "command": "owuiAgent.addFile",
         "title": "Add File to Chat",
         "category": "OWUI Agent"
+      },
+      {
+        "command": "owuiAgent.showHistory",
+        "title": "Show History",
+        "category": "OWUI Agent",
+        "icon": "$(history)"
+      },
+      {
+        "command": "owuiAgent.compact",
+        "title": "Compact Conversation",
+        "category": "OWUI Agent"
+      },
+      {
+        "command": "owuiAgent.openMemory",
+        "title": "Open Project Memory",
+        "category": "OWUI Agent"
+      },
+      {
+        "command": "owuiAgent.installExampleSkill",
+        "title": "Install Example Skill (dataviz)",
+        "category": "OWUI Agent"
       }
     ],
     "menus": {
@@ -89,6 +110,11 @@
           "command": "owuiAgent.refreshModels",
           "when": "view == owuiAgent.chat",
           "group": "navigation@2"
+        },
+        {
+          "command": "owuiAgent.showHistory",
+          "when": "view == owuiAgent.chat",
+          "group": "navigation@0"
         }
       ],
       "editor/context": [
@@ -237,6 +263,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Snapshot the workspace before each request in a private git repository inside VS Code's extension storage (never your own repository), so you can rewind. Requires git. When off, only files the agent edits are backed up."
+        },
+        "owuiAgent.skills.userDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Folder with your personal skills (each skill is a sub-folder with a `SKILL.md`). Defaults to `~/.owui-agent/skills`. Workspace skills live in `.owui/skills`."
         }
       }
     }

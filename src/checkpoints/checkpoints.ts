@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
+import type { SerializedCheckpoint } from '../storage/history';
 import type { ShadowGit } from './shadowGit';
 
 export interface Checkpoint {
@@ -147,7 +148,15 @@ export class CheckpointManager {
     return true;
   }
 
-  async dispose(): Promise<void> {
+  serialize(): SerializedCheckpoint[] {
+    return this.checkpoints.map((c) => ({ id: c.id, label: c.label, ts: c.ts, ...(c.sha ? { sha: c.sha } : {}), originals: [...c.originals] }));
+  }
+
+  restore(saved: SerializedCheckpoint[]): void {
+    this.checkpoints.splice(0, this.checkpoints.length, ...saved.map((c) => ({ id: c.id, label: c.label, ts: c.ts, ...(c.sha ? { sha: c.sha } : {}), originals: new Map(c.originals) })));
+  }
+
+  async purge(): Promise<void> {
     await rm(this.backupDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }

@@ -1,4 +1,5 @@
 import type { AskUserQuestion, PlanAnswer, ToolCardUpdate, TodoItem } from '../shared/protocol';
+import type { Skill } from '../skills/discovery';
 import type { PathGuard, ResolvedPath } from '../workspace/paths';
 import type { ProcessManager } from './shell/processManager';
 import type { ShellRegistry } from './shell/shells';
@@ -52,6 +53,8 @@ export interface ToolContext {
   setTodos(todos: TodoItem[]): void;
   beforeWrite(absolute: string): Promise<void>;
   presentPlan(plan: string): Promise<PlanDecision>;
+  skills: Skill[];
+  workspaceDirCreated(dir: string): void;
 }
 
 export type PlanDecision = PlanAnswer;

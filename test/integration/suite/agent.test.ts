@@ -45,7 +45,6 @@ describe('OWUI Agent tools and agent loop (integration)', () => {
 
   after(async () => {
     if (approver) clearInterval(approver);
-    await api?.keys.clear();
     await mock?.stop();
   });
 
@@ -115,7 +114,9 @@ describe('OWUI Agent tools and agent loop (integration)', () => {
     autoApprove();
     mock.enqueue(call('', { name: 'run_command', arguments: { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Hang forever' } }));
     const done = api.controller.send('hang');
-    await new Promise((r) => setTimeout(r, 1500));
+    const running = () => api.controller.viewState().transcript.some((t) => t.kind === 'tool' && t.status === 'running');
+    for (let waited = 0; !running() && waited < 20_000; waited += 25) await new Promise((r) => setTimeout(r, 25));
+    await new Promise((r) => setTimeout(r, 500));
     await vscode.commands.executeCommand('owuiAgent.stop');
     await done;
     const card = api.controller.viewState().transcript.find((t): t is ToolItem => t.kind === 'tool');

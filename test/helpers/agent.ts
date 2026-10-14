@@ -5,6 +5,8 @@ import { AgentSession, type RunContext } from '../../src/agent/session';
 import { CheckpointManager } from '../../src/checkpoints/checkpoints';
 import { ShadowGit } from '../../src/checkpoints/shadowGit';
 import { DiffStore } from '../../src/diff/diffStore';
+import { loadProjectContext } from '../../src/memory/projectMemory';
+import { discoverSkills } from '../../src/skills/discovery';
 import { MODE_TEXT, renderSystemPrompt } from '../../src/agent/systemPrompt';
 import { Egress } from '../../src/net/egress';
 import { OwuiClient } from '../../src/owui/client';
@@ -35,6 +37,8 @@ export interface HarnessOptions {
   maxRetries?: number;
   checkpoints?: boolean;
   plan?: (plan: string) => PlanAnswer | undefined;
+  contextSize?: number;
+  userSkillsDir?: string;
 }
 
 export interface Harness {
@@ -49,6 +53,7 @@ export interface Harness {
   modeHistory: AgentMode[];
   diffs: DiffStore;
   setMode(mode: AgentMode): void;
+  createdDirs: string[];
   cleanup(): Promise<void>;
 }
 
@@ -71,6 +76,7 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
   const harness = {} as Harness;
   const diffs = new DiffStore();
   const modeHistory: AgentMode[] = [];
+  const createdDirs: string[] = [];
   const session: AgentSession = new AgentSession(
     {
       client,
@@ -108,7 +114,7 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
       usage: () => undefined,
     },
   );
-  const model = resolveModel({ id: opts.modelId ?? 'mock-model', name: opts.modelId ?? 'Mock Model', contextSize: 32768, vision: opts.vision ?? false }, opts.override);
+  const model = resolveModel({ id: opts.modelId ?? 'mock-model', name: opts.modelId ?? 'Mock Model', contextSize: opts.contextSize ?? 32768, vision: opts.vision ?? false }, opts.override);
   const ctx: RunContext = {
     model,
     toolMode: model.toolMode === 'text' ? 'text' : 'native',
@@ -130,6 +136,15 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
       mode = m;
       modeHistory.push(m);
     },
+    loadContext: async () => {
+      const roots: { dir: string; source: 'workspace' | 'user' }[] = [{ dir: path.join(workspace, '.owui', 'skills'), source: 'workspace' }];
+      if (opts.userSkillsDir) roots.push({ dir: opts.userSkillsDir, source: 'user' });
+      const [sections, skills] = await Promise.all([loadProjectContext(workspace), discoverSkills(roots)]);
+      return { sections, skills };
+    },
+    onWorkspaceDirCreated: (dir) => {
+      createdDirs.push(dir);
+    },
   };
   Object.assign(harness, {
     session,
@@ -142,6 +157,7 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
     allowlist,
     modeHistory,
     diffs,
+    createdDirs,
     setMode: (m: AgentMode) => (mode = m),
     async cleanup() {
       await session.dispose();

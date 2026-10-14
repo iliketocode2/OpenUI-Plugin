@@ -4,6 +4,7 @@ import { listDirTool, readFileTool } from './fs/read';
 import { globTool, grepTool } from './fs/search';
 import { editFileTool, writeFileTool } from './fs/write';
 import { askUserTool, exitPlanModeTool, todoWriteTool, viewImageTool } from './interactive';
+import { loadSkillTool, updateMemoryTool } from './knowledge';
 import { listProcessesTool, readProcessOutputTool, runCommandTool, startProcessTool, stopProcessTool } from './shell/tools';
 import type { Tool } from './types';
 
@@ -23,6 +24,8 @@ export const ALL_TOOLS: Tool[] = [
   todoWriteTool,
   askUserTool,
   exitPlanModeTool,
+  loadSkillTool,
+  updateMemoryTool,
 ] as unknown as Tool[];
 
 export class ToolRegistry {

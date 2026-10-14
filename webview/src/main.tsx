@@ -1,9 +1,10 @@
 import { render, type RefObject } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'preact/hooks';
 import { SOVEREIGNTY_NOTICE } from '../../src/shared/notice';
-import type { AgentMode, ToWebview, ToolCardUpdate, TranscriptItem, ViewState } from '../../src/shared/protocol';
+import type { AgentMode, HistoryEntry, ToWebview, ToolCardUpdate, TranscriptItem, ViewState } from '../../src/shared/protocol';
 import { post, vscode } from './api';
 import { renderMarkdown } from './markdown';
+import { HistoryPanel } from './History';
 import { PlanCard, ReviewCard, RewindControl } from './PlanReview';
 import { QuestionCard, TodoPanel } from './Question';
 import { ToolCard } from './ToolCard';
@@ -31,6 +32,7 @@ function reducer(state: ViewState | undefined, action: Action): ViewState | unde
 function App() {
   const [state, dispatch] = useReducer(reducer, undefined);
   const [announcement, setAnnouncement] = useState('');
+  const [history, setHistory] = useState<{ open: boolean; entries?: HistoryEntry[]; query: string }>({ open: false, query: '' });
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const insertRef = useRef<(text: string) => void>(() => undefined);
 
@@ -40,6 +42,8 @@ function App() {
       if (msg.type === 'state' || msg.type === 'delta' || msg.type === 'toolUpdate') dispatch(msg);
       else if (msg.type === 'focusInput') inputRef.current?.focus();
       else if (msg.type === 'insertText') insertRef.current(msg.text);
+      else if (msg.type === 'showHistory') setHistory((h) => ({ ...h, open: true }));
+      else if (msg.type === 'history') setHistory((h) => ({ ...h, entries: msg.entries, query: msg.query }));
     };
     window.addEventListener('message', onMessage);
     post({ type: 'ready' });
@@ -68,7 +72,19 @@ function App() {
       <Header state={state} />
       {!state.noticeAcknowledged && <Notice />}
       <Connection state={state} />
-      <Transcript items={state.transcript} busy={busy} />
+      {history.open ? (
+        <HistoryPanel
+          entries={history.entries}
+          query={history.query}
+          currentId={state.sessionId}
+          onClose={() => {
+            setHistory((h) => ({ ...h, open: false }));
+            inputRef.current?.focus();
+          }}
+        />
+      ) : (
+        <Transcript items={state.transcript} busy={busy} />
+      )}
       <TodoPanel todos={state.todos} />
       <Composer busy={busy} disabled={!state.selectedModel} mode={state.mode} inputRef={inputRef} insertRef={insertRef} />
       <div class="sr-only" role="status" aria-live="polite">
@@ -304,6 +320,12 @@ function Item({ item, busy }: { item: TranscriptItem; busy: boolean }) {
           )}
         </div>
       );
+    case 'notice':
+      return (
+        <div class="notice-line" role="note">
+          {item.text}
+        </div>
+      );
     case 'warning':
       return (
         <div class="banner banner-warn" role="note">
@@ -390,7 +412,7 @@ function Composer({
         ref={inputRef}
         rows={3}
         value={text}
-        placeholder="Ask anything (Ctrl+Enter to send)"
+        placeholder="Ask anything (Ctrl+Enter to send, /compact to shrink the context)"
         onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
         onKeyDown={onKeyDown}
       />

@@ -1,11 +1,14 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { AgentController } from './agent/controller';
+import { installExampleSkill, openProjectMemory } from './commands/knowledge';
 import { ApiKeyStore } from './config/secrets';
 import { onSettingsChanged, readSettings } from './config/settings';
+import { PersistentState } from './config/state';
 import { Egress } from './net/egress';
 import { OwuiClient } from './owui/client';
 import { SOVEREIGNTY_NOTICE } from './shared/notice';
+import { HistoryStore } from './storage/history';
 import { pruneScratchpads } from './storage/scratchpad';
 import { ToolRegistry } from './tools/registry';
 import { ShellRegistry } from './tools/shell/shells';
@@ -21,8 +24,13 @@ export interface TestApi {
   setConfirm(fn: (message: string, detail: string, action: string) => Promise<boolean>): void;
 }
 
+let shutdown: (() => Promise<void>) | undefined;
+
 export function activate(context: vscode.ExtensionContext): TestApi | undefined {
   const globalStorage = context.globalStorageUri.fsPath;
+  const workspaceData = context.storageUri?.fsPath ?? path.join(globalStorage, 'no-workspace');
+  const globalState = new PersistentState(context.globalState);
+  const workspaceState = new PersistentState(context.workspaceState);
   const keys = new ApiKeyStore(context.secrets);
   const egress = new Egress(() => readSettings().baseUrl);
   const client = new OwuiClient(egress, () => keys.get(), {
@@ -35,7 +43,7 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
   const controller = new AgentController({
     client,
     keys,
-    globalState: context.globalState,
+    globalState,
     globalStorage,
     tools: new ToolRegistry(),
     shells: new ShellRegistry(),
@@ -44,6 +52,10 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
     workspaceStorage: context.storageUri?.fsPath,
     checkpointsEnabled: () => readSettings().checkpointsEnabled,
     confirm: (message, detail, action) => confirmImpl(message, detail, action),
+    history: new HistoryStore(path.join(workspaceData, 'sessions')),
+    backupsRoot: path.join(workspaceData, 'backups'),
+    workspaceState,
+    userSkillsDir: () => readSettings().userSkillsDir,
   });
 
   const setApiKey = async () => {
@@ -79,6 +91,10 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
       const fence = text.includes('```') ? '````' : '```';
       return provider.insertText(`${rel}${range}\n${fence}${editor.document.languageId}\n${text}\n${fence}\n`);
     }),
+    vscode.commands.registerCommand('owuiAgent.showHistory', () => provider.showHistory()),
+    vscode.commands.registerCommand('owuiAgent.compact', () => controller.compact()),
+    vscode.commands.registerCommand('owuiAgent.openMemory', () => openProjectMemory((dir) => controller.workspaceDirCreated(dir))),
+    vscode.commands.registerCommand('owuiAgent.installExampleSkill', () => installExampleSkill(context.extensionPath, readSettings().userSkillsDir)),
     vscode.commands.registerCommand('owuiAgent.addFile', (uri?: vscode.Uri, uris?: vscode.Uri[]) => {
       const targets = uris?.length ? uris : uri ? [uri] : vscode.window.activeTextEditor ? [vscode.window.activeTextEditor.document.uri] : [];
       if (!targets.length) return;
@@ -88,6 +104,11 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
     onSettingsChanged(() => void controller.refresh()),
   );
 
+  shutdown = async () => {
+    await controller.flush();
+    await Promise.all([globalState.flush(), workspaceState.flush()]);
+  };
+  void controller.pruneOrphanBackups();
   void pruneScratchpads(globalStorage, readSettings().scratchpadRetentionDays, [controller.currentSession.scratchpad]);
   return context.extensionMode === vscode.ExtensionMode.Test
     ? {
@@ -101,4 +122,6 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
     : undefined;
 }
 
-export function deactivate(): void {}
+export function deactivate(): Promise<void> | undefined {
+  return shutdown?.();
+}
