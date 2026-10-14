@@ -1,0 +1,109 @@
+{
+  "base": "http://localhost:8090",
+  "model": "qwen3.6:27b",
+  "at": "2026-10-14T17:10:14.817Z",
+  "results": [
+    {
+      "name": "server version",
+      "status": "pass",
+      "detail": "{\"version\":\"0.12.0\",\"deployment_id\":\"\"}"
+    },
+    {
+      "name": "GET /api/config",
+      "status": "pass",
+      "detail": "features keys: slim, auth, auth_trusted_header, enable_signup_password_confirmation, enable_ldap, enable_signup, enable_login_form, enable_websocket"
+    },
+    {
+      "name": "GET /api/models",
+      "status": "pass",
+      "detail": "1 models; qwen3.6:27b found; capabilities={\"file_context\":true,\"vision\":true,\"file_upload\":true,\"web_search\":true,\"image_generation\":true,\"code_interpreter\":true,\"terminal\":true,\"citations\":true,\"status_updates\":true,\"usage\":true,\"memory\":true,\"builtin_tools\":true}; num_ctx=unset"
+    },
+    {
+      "name": "long prompt (~8922 est. tokens)",
+      "status": "fail",
+      "detail": "The operation was aborted due to timeout after 600s"
+    }
+  ],
+  "findings": {
+    "version": {
+      "version": "0.12.0",
+      "deployment_id": ""
+    },
+    "config": {
+      "features": {
+        "slim": false,
+        "auth": true,
+        "auth_trusted_header": false,
+        "enable_signup_password_confirmation": false,
+        "enable_ldap": false,
+        "enable_signup": false,
+        "enable_login_form": true,
+        "enable_websocket": true
+      },
+      "keys": [
+        "status",
+        "name",
+        "version",
+        "default_locale",
+        "i18n",
+        "oauth",
+        "features"
+      ]
+    },
+    "models": {
+      "count": 1,
+      "ids": [
+        "qwen3.6:27b"
+      ],
+      "envelope": [
+        "data"
+      ]
+    },
+    "model": {
+      "topLevelKeys": [
+        "id",
+        "name",
+        "object",
+        "created",
+        "owned_by",
+        "ollama",
+        "loaded",
+        "connection_type",
+        "tags",
+        "info",
+        "actions",
+        "filters"
+      ],
+      "owned_by": "ollama",
+      "capabilities": {
+        "file_context": true,
+        "vision": true,
+        "file_upload": true,
+        "web_search": true,
+        "image_generation": true,
+        "code_interpreter": true,
+        "terminal": true,
+        "citations": true,
+        "status_updates": true,
+        "usage": true,
+        "memory": true,
+        "builtin_tools": true
+      },
+      "params": {},
+      "ollamaDetails": {
+        "parent_model": "qwen3.6-source:27b-mtp-q4_K_M-20260824",
+        "format": "gguf",
+        "family": "qwen35",
+        "families": [
+          "qwen35"
+        ],
+        "parameter_size": "27.3B",
+        "quantization_level": "Q4_K_M",
+        "context_length": 262144,
+        "embedding_length": 5120,
+        "runner": "llamacpp"
+      },
+      "hasInfo": true
+    }
+  }
+}

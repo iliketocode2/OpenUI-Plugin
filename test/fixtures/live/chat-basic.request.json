@@ -1,0 +1,10 @@
+{
+  "model": "qwen3.6:27b",
+  "stream": true,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Reply with exactly the word: pong"
+    }
+  ]
+}

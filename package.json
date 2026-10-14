@@ -1,0 +1,181 @@
+{
+  "name": "owui-agent",
+  "displayName": "OWUI Agent",
+  "description": "Autonomous coding agent that talks only to your self-hosted Open WebUI.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "owuiAgent",
+          "title": "OWUI Agent",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "owuiAgent": [
+        {
+          "type": "webview",
+          "id": "owuiAgent.chat",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "owuiAgent.setApiKey",
+        "title": "Set API Key",
+        "category": "OWUI Agent"
+      },
+      {
+        "command": "owuiAgent.clearApiKey",
+        "title": "Clear API Key",
+        "category": "OWUI Agent"
+      },
+      {
+        "command": "owuiAgent.newSession",
+        "title": "New Session",
+        "category": "OWUI Agent",
+        "icon": "$(add)"
+      },
+      {
+        "command": "owuiAgent.refreshModels",
+        "title": "Refresh Models",
+        "category": "OWUI Agent",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "owuiAgent.stop",
+        "title": "Stop",
+        "category": "OWUI Agent"
+      },
+      {
+        "command": "owuiAgent.showSovereigntyNotice",
+        "title": "Show Data Sovereignty Notice",
+        "category": "OWUI Agent"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "owuiAgent.newSession",
+          "when": "view == owuiAgent.chat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "owuiAgent.refreshModels",
+          "when": "view == owuiAgent.chat",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "owuiAgent.stop",
+        "key": "escape",
+        "when": "focusedView == owuiAgent.chat"
+      }
+    ],
+    "configuration": {
+      "title": "OWUI Agent",
+      "properties": {
+        "owuiAgent.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "markdownDescription": "Base URL of your Open WebUI instance. The extension sends network requests **only** to this origin.",
+          "scope": "application"
+        },
+        "owuiAgent.defaultModel": {
+          "type": "string",
+          "default": "",
+          "description": "Model ID to select by default."
+        },
+        "owuiAgent.models": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Per-model overrides, keyed by model ID. Fields: `toolMode` (`auto` | `native` | `text`), `contextSize` (tokens), `vision` (boolean), `local` (boolean — you confirm the model runs on infrastructure you control).",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "toolMode": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "native",
+                  "text"
+                ]
+              },
+              "contextSize": {
+                "type": "integer",
+                "minimum": 512
+              },
+              "vision": {
+                "type": "boolean"
+              },
+              "local": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "owuiAgent.request.stallTimeoutSeconds": {
+          "type": "integer",
+          "default": 300,
+          "minimum": 10,
+          "description": "Abort a model request when the stream sends nothing for this many seconds. CPU-only inference may need a high value."
+        },
+        "owuiAgent.request.maxRetries": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Retries for connection errors, HTTP 429 and 5xx responses."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p webview/tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:egress": "vitest run test/egress",
+    "test:integration": "node esbuild.mjs && node test/integration/run.mjs",
+    "check": "npm run typecheck && npm run lint && npm test && npm run test:integration",
+    "smoke:live": "node scripts/smoke-live.mjs",
+    "package": "node scripts/package-vsix.mjs"
+  },
+  "dependencies": {
+    "diff": "9.0.0",
+    "highlight.js": "11.12.0",
+    "markdown-it": "15.0.2",
+    "preact": "10.29.8"
+  },
+  "devDependencies": {
+    "@types/mocha": "10.0.10",
+    "@types/node": "22.20.4",
+    "@types/vscode": "1.96.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "0.28.2",
+    "eslint": "10.11.0",
+    "mocha": "11.8.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "5.0.2"
+  }
+}

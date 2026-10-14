@@ -1,0 +1,84 @@
+{
+  "data": [
+    {
+      "id": "qwen3.6:27b",
+      "name": "qwen3.6:27b",
+      "object": "model",
+      "created": 0,
+      "owned_by": "ollama",
+      "ollama": {
+        "name": "qwen3.6:27b",
+        "model": "qwen3.6:27b",
+        "modified_at": "2026-10-14T00:53:38.4290952-04:00",
+        "size": 17769076933,
+        "digest": "bcbdbd4bcf86f2c4a56cd1698fb31f9434f7dd99752f71b636c750aaa67a49a5",
+        "details": {
+          "parent_model": "qwen3.6-source:27b-mtp-q4_K_M-20260824",
+          "format": "gguf",
+          "family": "qwen35",
+          "families": [
+            "qwen35"
+          ],
+          "parameter_size": "27.3B",
+          "quantization_level": "Q4_K_M",
+          "context_length": 262144,
+          "embedding_length": 5120,
+          "runner": "llamacpp"
+        },
+        "capabilities": [
+          "completion",
+          "vision",
+          "tools",
+          "thinking"
+        ],
+        "connection_type": "local",
+        "urls": [
+          0
+        ]
+      },
+      "loaded": false,
+      "connection_type": "local",
+      "tags": [],
+      "info": {
+        "version_id": "33f3ccbf-5f75-4581-913e-885bb0fb2fe4",
+        "id": "qwen3.6:27b",
+        "user_id": "5bbba0d3-85e4-434d-8560-73d8199d4557",
+        "base_model_id": null,
+        "name": "qwen3.6:27b",
+        "params": {},
+        "meta": {
+          "background_image_url": null,
+          "description": null,
+          "i18n": null,
+          "capabilities": {
+            "file_context": true,
+            "vision": true,
+            "file_upload": true,
+            "web_search": true,
+            "image_generation": true,
+            "code_interpreter": true,
+            "terminal": true,
+            "citations": true,
+            "status_updates": true,
+            "usage": true,
+            "memory": true,
+            "builtin_tools": true
+          },
+          "knowledge": null,
+          "voice": null,
+          "voice_avatar": null,
+          "defaultFeatureIds": [
+            "web_search",
+            "code_interpreter"
+          ]
+        },
+        "access_grants": [],
+        "is_active": true,
+        "updated_at": 1791992243,
+        "created_at": 1791990903
+      },
+      "actions": [],
+      "filters": []
+    }
+  ]
+}

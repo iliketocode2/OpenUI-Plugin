@@ -1,0 +1,38 @@
+{
+  "model": "qwen3.6:27b",
+  "stream": true,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a calculator. Always use the add tool for arithmetic. Never compute sums yourself."
+    },
+    {
+      "role": "user",
+      "content": "What is 1234 + 5678? Use the add tool."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "add",
+        "description": "Add two integers and return the sum.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "integer"
+            },
+            "b": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    }
+  ]
+}

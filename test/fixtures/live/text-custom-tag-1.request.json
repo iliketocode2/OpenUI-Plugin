@@ -1,0 +1,14 @@
+{
+  "model": "qwen3.6:27b",
+  "stream": true,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You can call tools. To call a tool, output exactly:\n<agent_tool>\n{\"name\": \"<tool name>\", \"arguments\": {<JSON arguments>}}\n</agent_tool>\nThen stop and wait. The result will arrive in a <tool_result> block.\nAvailable tools:\n- add: Add two integers. Arguments: {\"a\": integer, \"b\": integer}\nAlways use the add tool for arithmetic."
+    },
+    {
+      "role": "user",
+      "content": "What is 4321 + 8765?"
+    }
+  ]
+}

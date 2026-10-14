@@ -1,0 +1,308 @@
+{
+  "base": "http://localhost:8090",
+  "model": "qwen3.6:27b",
+  "at": "2026-10-14T16:59:27.365Z",
+  "results": [
+    {
+      "name": "server version",
+      "status": "pass",
+      "detail": "{\"version\":\"0.12.0\",\"deployment_id\":\"\"}"
+    },
+    {
+      "name": "GET /api/config",
+      "status": "pass",
+      "detail": "features keys: slim, auth, auth_trusted_header, enable_signup_password_confirmation, enable_ldap, enable_signup, enable_login_form, enable_websocket"
+    },
+    {
+      "name": "GET /api/models",
+      "status": "pass",
+      "detail": "1 models; qwen3.6:27b found; capabilities={\"file_context\":true,\"vision\":true,\"file_upload\":true,\"web_search\":true,\"image_generation\":true,\"code_interpreter\":true,\"terminal\":true,\"citations\":true,\"status_updates\":true,\"usage\":true,\"memory\":true,\"builtin_tools\":true}; num_ctx=unset"
+    },
+    {
+      "name": "streamed chat",
+      "status": "pass",
+      "detail": "streamed=true, content=\"pong\", 254716ms"
+    },
+    {
+      "name": "usage present",
+      "status": "pass",
+      "detail": "{\"input_tokens\":17,\"output_tokens\":105,\"total_tokens\":122,\"prompt_tokens\":17,\"completion_tokens\":105,\"response_token/s\":2.12,\"prompt_token/s\":2.43,\"total_duration\":254564684300,\"load_duration\":93876000,\"prompt_eval_count\":17,\"prompt_eval_duration\":6998823000,\"eval_count\":105,\"eval_duration\":49559084000,\"approximate_total\":\"0h4m14s\",\"completion_tokens_details\":{\"reasoning_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}}"
+    },
+    {
+      "name": "reasoning form",
+      "status": "pass",
+      "detail": "reasoning_content (380 chars)"
+    },
+    {
+      "name": "native tool call",
+      "status": "pass",
+      "detail": "add({\"a\":1234,\"b\":5678}) id=call_1ss4az3r chunks=1 shapes=indexed finish=tool_calls"
+    },
+    {
+      "name": "native tool result round-trip",
+      "status": "pass",
+      "detail": "\"The sum of 1234 and 5678 is 6912.\""
+    },
+    {
+      "name": "agent read→edit→run round-trip",
+      "status": "pass",
+      "detail": "steps=3; edited=true; ran=true; final=\"The exact output is:\\n```\\nHi, sovereign world\\n```\\n\\n**Summary:** Changed 'Hello' to 'Hi' in `greet.js`, ran it with `node`\""
+    },
+    {
+      "name": "long prompt (~4487 est. tokens): truncation check",
+      "status": "pass",
+      "detail": "server prompt_tokens=3417, estimate=4487, ratio=0.76"
+    },
+    {
+      "name": "long prompt (~4487 est. tokens): needle recall",
+      "status": "pass",
+      "detail": "\"MAGENTA-7741\""
+    }
+  ],
+  "findings": {
+    "version": {
+      "version": "0.12.0",
+      "deployment_id": ""
+    },
+    "config": {
+      "features": {
+        "slim": false,
+        "auth": true,
+        "auth_trusted_header": false,
+        "enable_signup_password_confirmation": false,
+        "enable_ldap": false,
+        "enable_signup": false,
+        "enable_login_form": true,
+        "enable_websocket": true
+      },
+      "keys": [
+        "status",
+        "name",
+        "version",
+        "default_locale",
+        "i18n",
+        "oauth",
+        "features"
+      ]
+    },
+    "models": {
+      "count": 1,
+      "ids": [
+        "qwen3.6:27b"
+      ],
+      "envelope": [
+        "data"
+      ]
+    },
+    "model": {
+      "topLevelKeys": [
+        "id",
+        "name",
+        "object",
+        "created",
+        "owned_by",
+        "ollama",
+        "loaded",
+        "connection_type",
+        "tags",
+        "info",
+        "actions",
+        "filters"
+      ],
+      "owned_by": "ollama",
+      "capabilities": {
+        "file_context": true,
+        "vision": true,
+        "file_upload": true,
+        "web_search": true,
+        "image_generation": true,
+        "code_interpreter": true,
+        "terminal": true,
+        "citations": true,
+        "status_updates": true,
+        "usage": true,
+        "memory": true,
+        "builtin_tools": true
+      },
+      "params": {},
+      "ollamaDetails": {
+        "parent_model": "qwen3.6-source:27b-mtp-q4_K_M-20260824",
+        "format": "gguf",
+        "family": "qwen35",
+        "families": [
+          "qwen35"
+        ],
+        "parameter_size": "27.3B",
+        "quantization_level": "Q4_K_M",
+        "context_length": 262144,
+        "embedding_length": 5120,
+        "runner": "llamacpp"
+      },
+      "hasInfo": true
+    },
+    "chatBasic": {
+      "streamed": true,
+      "contentType": "text/event-stream",
+      "events": 93,
+      "sawDone": true,
+      "finishReason": "stop",
+      "usage": {
+        "input_tokens": 17,
+        "output_tokens": 105,
+        "total_tokens": 122,
+        "prompt_tokens": 17,
+        "completion_tokens": 105,
+        "response_token/s": 2.12,
+        "prompt_token/s": 2.43,
+        "total_duration": 254564684300,
+        "load_duration": 93876000,
+        "prompt_eval_count": 17,
+        "prompt_eval_duration": 6998823000,
+        "eval_count": 105,
+        "eval_duration": 49559084000,
+        "approximate_total": "0h4m14s",
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "reasoningForm": "reasoning_content",
+      "reasoningChars": 380,
+      "toolCallChunks": 0,
+      "toolCallShapes": [],
+      "extraTopLevelKeys": [],
+      "nonstandardLines": [],
+      "ms": 254716,
+      "fixture": "chat-basic"
+    },
+    "nativeTool1": {
+      "streamed": true,
+      "contentType": "text/event-stream",
+      "events": 60,
+      "sawDone": true,
+      "finishReason": "tool_calls",
+      "usage": {
+        "input_tokens": 317,
+        "output_tokens": 110,
+        "total_tokens": 427,
+        "prompt_tokens": 317,
+        "completion_tokens": 110,
+        "response_token/s": 1.97,
+        "prompt_token/s": 105.14,
+        "total_duration": 60993355000,
+        "load_duration": 118925500,
+        "prompt_eval_count": 317,
+        "prompt_eval_duration": 3014942000,
+        "eval_count": 110,
+        "eval_duration": 55730563000,
+        "approximate_total": "0h1m0s",
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "reasoningForm": "reasoning_content",
+      "reasoningChars": 180,
+      "toolCallChunks": 1,
+      "toolCallShapes": [
+        "indexed"
+      ],
+      "extraTopLevelKeys": [],
+      "nonstandardLines": [],
+      "ms": 61145,
+      "fixture": "native-tool-1"
+    },
+    "nativeTool2": {
+      "streamed": true,
+      "contentType": "text/event-stream",
+      "events": 64,
+      "sawDone": true,
+      "finishReason": "stop",
+      "usage": {
+        "input_tokens": 379,
+        "output_tokens": 72,
+        "total_tokens": 451,
+        "prompt_tokens": 379,
+        "completion_tokens": 72,
+        "response_token/s": 1.83,
+        "prompt_token/s": 17.73,
+        "total_duration": 60839994600,
+        "load_duration": 131200000,
+        "prompt_eval_count": 379,
+        "prompt_eval_duration": 21373840000,
+        "eval_count": 72,
+        "eval_duration": 39251030000,
+        "approximate_total": "0h1m0s",
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "reasoningForm": "reasoning_content",
+      "reasoningChars": 163,
+      "toolCallChunks": 0,
+      "toolCallShapes": [],
+      "extraTopLevelKeys": [],
+      "nonstandardLines": [],
+      "ms": 60992,
+      "fixture": "native-tool-2"
+    },
+    "agent": {
+      "trace": [
+        "read_file({\"path\":\"greet.js\"}) -> const word = 'Hello';",
+        "edit_file({\"path\":\"greet.js\",\"old_string\":\"const word = 'Hello';\",\"new_string\":\"const word = 'Hi';\"}) -> OK",
+        "run_command({\"command\":\"node greet.js\"}) -> exit 0"
+      ],
+      "finalText": "The exact output is:\n```\nHi, sovereign world\n```\n\n**Summary:** Changed 'Hello' to 'Hi' in `greet.js`, ran it with `node`, and confirmed the output is \"Hi, sovereign world\".",
+      "edited": true,
+      "ran": true
+    },
+    "truncation-160": {
+      "streamed": true,
+      "contentType": "text/event-stream",
+      "events": 120,
+      "sawDone": true,
+      "finishReason": "stop",
+      "usage": {
+        "input_tokens": 3417,
+        "output_tokens": 134,
+        "total_tokens": 3551,
+        "prompt_tokens": 3417,
+        "completion_tokens": 134,
+        "response_token/s": 1.83,
+        "prompt_token/s": 888.89,
+        "total_duration": 85929614300,
+        "load_duration": 36795800,
+        "prompt_eval_count": 3417,
+        "prompt_eval_duration": 3844120000,
+        "eval_count": 134,
+        "eval_duration": 73198584000,
+        "approximate_total": "0h1m25s",
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "reasoningForm": "reasoning_content",
+      "reasoningChars": 419,
+      "toolCallChunks": 0,
+      "toolCallShapes": [],
+      "extraTopLevelKeys": [],
+      "nonstandardLines": [],
+      "ms": 86135,
+      "fixture": "truncation-160",
+      "estimate": 4487,
+      "recalled": true,
+      "check": {
+        "prompt_tokens": 3417,
+        "estimate": 4487,
+        "ratio": 0.7615333184755961,
+        "suspect": false
+      }
+    }
+  }
+}
