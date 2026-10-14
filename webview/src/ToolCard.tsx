@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ApprovalDecision, TranscriptItem } from '../../src/shared/protocol';
-import { post } from './api';
+import { post, returnFocusToComposer } from './api';
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
 
@@ -94,8 +94,10 @@ function Approval({ id, approval }: { id: string; approval: NonNullable<ToolItem
   const [edited, setEdited] = useState(approval.editable?.value ?? '');
   const allowRef = useRef<HTMLButtonElement>(null);
   useEffect(() => allowRef.current?.focus(), []);
-  const decide = (decision: ApprovalDecision) =>
+  const decide = (decision: ApprovalDecision) => {
     post({ type: 'approve', id, decision: approval.editable && decision.decision !== 'deny' ? { ...decision, edited: edited.trim() } : decision });
+    returnFocusToComposer();
+  };
   const danger = approval.warnings.length > 0 && approval.kind === 'command';
   return (
     <div class={`approval ${danger ? 'approval-danger' : ''}`} role="group" aria-label="Approval required">

@@ -13,6 +13,7 @@ await esbuild.build({
   platform: 'node',
   format: 'cjs',
   target: 'node20',
+  external: ['playwright-core'],
   loader: { '.md': 'text' },
   logLevel: 'warning',
 });

@@ -331,7 +331,8 @@
     "check": "npm run typecheck && npm run lint && npm test && npm run test:integration",
     "smoke:live": "node scripts/smoke-live.mjs",
     "package": "node scripts/package-vsix.mjs",
-    "smoke:agent": "node scripts/live-agent.mjs"
+    "smoke:agent": "node scripts/live-agent.mjs",
+    "smoke:web": "esbuild test/live/web.live.ts --bundle --external:playwright-core --platform=node --format=cjs --outfile=out/live/web.live.js --log-level=warning && node out/live/web.live.js"
   },
   "dependencies": {
     "diff": "9.0.0",

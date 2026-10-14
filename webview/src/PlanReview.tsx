@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'preact/hooks';
 import type { AgentMode, RewindScope, TranscriptItem } from '../../src/shared/protocol';
-import { post } from './api';
+import { post, returnFocusToComposer } from './api';
 import { renderMarkdown } from './markdown';
 
 type PlanItem = Extract<TranscriptItem, { kind: 'plan' }>;
@@ -31,7 +31,14 @@ export function PlanCard({ item }: { item: PlanItem }) {
         (feedback === undefined ? (
           <div class="actions">
             {APPROVE.map((a, i) => (
-              <button key={a.mode} class={`btn ${i ? 'btn-secondary' : ''}`} onClick={() => post({ type: 'planDecision', id: item.id, answer: { approved: true, mode: a.mode } })}>
+              <button
+                key={a.mode}
+                class={`btn ${i ? 'btn-secondary' : ''}`}
+                onClick={() => {
+                  post({ type: 'planDecision', id: item.id, answer: { approved: true, mode: a.mode } });
+                  returnFocusToComposer();
+                }}
+              >
                 {a.label}
               </button>
             ))}
@@ -44,7 +51,10 @@ export function PlanCard({ item }: { item: PlanItem }) {
             class="feedback"
             onSubmit={(e) => {
               e.preventDefault();
-              if (feedback.trim()) post({ type: 'planDecision', id: item.id, answer: { approved: false, feedback: feedback.trim() } });
+              if (feedback.trim()) {
+                post({ type: 'planDecision', id: item.id, answer: { approved: false, feedback: feedback.trim() } });
+                returnFocusToComposer();
+              }
             }}
           >
             <label class="sr-only" for={`pf-${item.id}`}>

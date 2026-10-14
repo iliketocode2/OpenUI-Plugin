@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { TodoItem, TranscriptItem } from '../../src/shared/protocol';
-import { post } from './api';
+import { post, returnFocusToComposer } from './api';
 
 type QuestionItem = Extract<TranscriptItem, { kind: 'question' }>;
 
@@ -32,7 +32,10 @@ export function QuestionCard({ item }: { item: QuestionItem }) {
       aria-label="Questions from the agent"
       onSubmit={(e) => {
         e.preventDefault();
-        if (complete) post({ type: 'answer', id: item.id, answers });
+        if (complete) {
+          post({ type: 'answer', id: item.id, answers });
+          returnFocusToComposer();
+        }
       }}
     >
       {item.questions.map((q, qi) => {

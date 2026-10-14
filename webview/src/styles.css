@@ -772,12 +772,19 @@ body.vscode-high-contrast .question {
 .rewind {
   margin-left: auto;
   font-size: 0.95em;
-  visibility: hidden;
+  opacity: 0;
 }
 
 .msg-user:hover .rewind,
-.msg-user:focus-within .rewind {
-  visibility: visible;
+.msg-user:focus-within .rewind,
+.rewind:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .rewind {
+    opacity: 1;
+  }
 }
 
 .rewind-menu {

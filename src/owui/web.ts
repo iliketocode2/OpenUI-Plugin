@@ -56,6 +56,14 @@ export class OwuiWeb {
 
   async search(query: string, signal?: AbortSignal): Promise<{ results: WebResult[]; withContent: boolean }> {
     const res = await this.request('POST', SEARCH_PATH, { queries: [query] }, signal);
+    if (res.status === 403) {
+      await res.body?.cancel().catch(() => undefined);
+      const info = await this.engineInfo(signal);
+      if (info.status === 'ok' && !info.enabled) {
+        throw new WebAccessError('Web search is turned off in Open WebUI. An administrator can turn it on under Admin Panel → Settings → Web Search.');
+      }
+      throw this.forbidden('search');
+    }
     if (!res.ok) throw await this.describe(res, 'search');
     const body = obj(await res.json()) ?? {};
     const items = Array.isArray(body.items) ? body.items : [];
@@ -99,13 +107,15 @@ export class OwuiWeb {
     });
   }
 
+  private forbidden(what: 'search' | 'fetch'): WebAccessError {
+    return new WebAccessError(
+      `Open WebUI refused the web ${what} (HTTP 403). Either web search is turned off in Open WebUI (Admin Panel → Settings → Web Search), your account lacks the "Web Search" permission, or the instance's API Key Endpoint Restrictions do not allow ${what === 'search' ? SEARCH_PATH : FETCH_PATH}.`,
+    );
+  }
+
   private async describe(res: Response, what: 'search' | 'fetch'): Promise<Error> {
     const text = await res.text().catch(() => '');
-    if (res.status === 401 || res.status === 403) {
-      return new WebAccessError(
-        `Open WebUI refused the web ${what} (HTTP ${res.status}). Either web search is turned off in Open WebUI (Admin Panel → Settings → Web Search), your account lacks the "Web Search" permission, or the instance's API Key Endpoint Restrictions do not allow ${what === 'search' ? SEARCH_PATH : FETCH_PATH}.`,
-      );
-    }
+    if (res.status === 401 || res.status === 403) return this.forbidden(what);
     if (res.status === 404 || res.status === 405) {
       return new WebAccessError(`This Open WebUI version does not provide ${what === 'search' ? SEARCH_PATH : FETCH_PATH}. Update Open WebUI to use web ${what}.`);
     }

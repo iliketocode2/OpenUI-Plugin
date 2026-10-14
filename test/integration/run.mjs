@@ -35,7 +35,7 @@ try {
   code = await runTests({
     version: process.env.VSCODE_TEST_VERSION ?? '1.96.0',
     vscodeExecutablePath: process.env.VSCODE_TEST_PATH,
-    extensionDevelopmentPath: root,
+    extensionDevelopmentPath: process.env.OWUI_TEST_EXTENSION_PATH ?? root,
     extensionTestsPath: join(outDir, 'index.js'),
     extensionTestsEnv: { OWUI_AGENT_INTEGRATION: '1' },
     launchArgs: [workspace, '--disable-extensions', '--disable-workspace-trust', `--user-data-dir=${userData}`, '--skip-welcome', '--skip-release-notes'],

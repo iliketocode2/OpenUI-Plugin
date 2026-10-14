@@ -13,3 +13,7 @@ export const vscode = acquireVsCodeApi();
 export function post(msg: FromWebview): void {
   vscode.postMessage(msg);
 }
+
+export function returnFocusToComposer(): void {
+  requestAnimationFrame(() => document.getElementById('prompt')?.focus());
+}

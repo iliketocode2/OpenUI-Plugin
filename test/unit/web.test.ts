@@ -72,6 +72,8 @@ describe('OwuiWeb client', () => {
   it('explains permission, restriction and version problems', async () => {
     mock.route('POST', SEARCH_PATH, { kind: 'json', status: 403, body: { detail: 'You do not have permission' } });
     await expect(web().search('q')).rejects.toThrow(/API Key Endpoint Restrictions do not allow \/api\/v1\/retrieval\/process\/web\/search/);
+    mock.route('GET', '/api/v1/retrieval/config', { kind: 'json', body: { web: { ENABLE_WEB_SEARCH: false, WEB_SEARCH_ENGINE: 'searxng' } } });
+    await expect(web().search('q')).rejects.toThrow(/^Web search is turned off in Open WebUI/);
     mock.route('POST', SEARCH_PATH, { kind: 'json', status: 404, body: { detail: 'Not Found' } });
     await expect(web().search('q')).rejects.toBeInstanceOf(WebAccessError);
     mock.route('POST', FETCH_PATH, { kind: 'json', status: 400, body: { detail: 'Failed to fetch' } });
