@@ -117,6 +117,7 @@ function Header({ state }: { state: ViewState }) {
           ))}
         </select>
         <Sovereignty level={state.sovereignty} />
+        <WebBadge web={state.web} />
       </div>
       {selected && (
         <div class="row meta">
@@ -156,6 +157,25 @@ function Sovereignty({ level }: { level: ViewState['sovereignty'] }) {
       }
     >
       <span aria-hidden="true">●</span> {local ? 'Local' : 'Unverified'}
+    </span>
+  );
+}
+
+const WEB_LABEL: Record<ViewState['web']['verification'], { text: (engine?: string) => string; ok: boolean; hint: string }> = {
+  verified: { text: () => 'Web: SearXNG ✓', ok: true, hint: 'Web search is on and Open WebUI reports a SearXNG engine. Queries still reach the internet through it; each one is shown to you first.' },
+  confirmed: { text: () => 'Web: SearXNG', ok: true, hint: 'Web search is on. You confirmed in settings that Open WebUI uses SearXNG; the extension could not check it.' },
+  unverified: { text: () => 'Web: unverified', ok: false, hint: 'Web search is on, but the search engine Open WebUI uses could not be checked.' },
+  'other-engine': { text: (e) => `Web: ${e ?? 'third-party'}`, ok: false, hint: 'Open WebUI sends web searches to a third-party engine.' },
+  'disabled-on-server': { text: () => 'Web: off in Open WebUI', ok: false, hint: 'Web search is turned off in Open WebUI.' },
+  unavailable: { text: () => 'Web: unavailable', ok: false, hint: 'This Open WebUI version does not offer web search.' },
+};
+
+function WebBadge({ web }: { web: ViewState['web'] }) {
+  if (!web.enabled) return null;
+  const l = WEB_LABEL[web.verification];
+  return (
+    <span class={`badge ${l.ok ? 'badge-ok' : 'badge-warn'}`} title={[l.hint, web.detail].filter(Boolean).join(' ')}>
+      {l.text(web.engine)}
     </span>
   );
 }

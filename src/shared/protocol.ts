@@ -24,15 +24,24 @@ export interface UsageView {
 export type ToolStatus = 'pending' | 'awaiting-approval' | 'running' | 'done' | 'error' | 'denied' | 'cancelled';
 
 export interface ApprovalRequest {
-  kind: 'edit' | 'command' | 'read' | 'write';
+  kind: 'edit' | 'command' | 'read' | 'write' | 'web';
   question: string;
   warnings: string[];
   allowAlways?: string;
+  editable?: { label: string; value: string };
 }
 
 export interface ApprovalDecision {
   decision: 'allow' | 'allowAlways' | 'deny';
   feedback?: string;
+  edited?: string;
+}
+
+export interface WebStatusView {
+  enabled: boolean;
+  engine?: string;
+  verification: 'verified' | 'confirmed' | 'unverified' | 'other-engine' | 'disabled-on-server' | 'unavailable';
+  detail?: string;
 }
 
 export interface ToolCardUpdate {
@@ -121,6 +130,7 @@ export interface ViewState {
   usage?: UsageView;
   sovereignty: SovereigntyLevel;
   noticeAcknowledged: boolean;
+  web: WebStatusView;
 }
 
 export type ToWebview =

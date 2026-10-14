@@ -91,9 +91,11 @@ function Diff({ text }: { text: string }) {
 
 function Approval({ id, approval }: { id: string; approval: NonNullable<ToolItem['approval']> }) {
   const [feedback, setFeedback] = useState<string | undefined>(undefined);
+  const [edited, setEdited] = useState(approval.editable?.value ?? '');
   const allowRef = useRef<HTMLButtonElement>(null);
   useEffect(() => allowRef.current?.focus(), []);
-  const decide = (decision: ApprovalDecision) => post({ type: 'approve', id, decision });
+  const decide = (decision: ApprovalDecision) =>
+    post({ type: 'approve', id, decision: approval.editable && decision.decision !== 'deny' ? { ...decision, edited: edited.trim() } : decision });
   const danger = approval.warnings.length > 0 && approval.kind === 'command';
   return (
     <div class={`approval ${danger ? 'approval-danger' : ''}`} role="group" aria-label="Approval required">
@@ -104,6 +106,12 @@ function Approval({ id, approval }: { id: string; approval: NonNullable<ToolItem
             <li key={i}>{w}</li>
           ))}
         </ul>
+      )}
+      {approval.editable && feedback === undefined && (
+        <label class="approval-edit">
+          <span>{approval.editable.label}</span>
+          <input type="text" value={edited} onInput={(e) => setEdited((e.target as HTMLInputElement).value)} />
+        </label>
       )}
       {feedback === undefined ? (
         <div class="actions">

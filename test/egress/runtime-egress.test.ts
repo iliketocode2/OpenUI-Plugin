@@ -88,8 +88,10 @@ describe('network egress', () => {
     const client = new OwuiClient(new Egress(() => mock.baseUrl), async () => KEY, { stallTimeoutMs: () => 5000, maxRetries: () => 2, backoffBaseMs: 5, backoffMaxMs: 10 });
     await client.listModels();
     await client.version();
-    const h = await createHarness({ baseUrl: mock.baseUrl, apiKey: KEY, mode: 'auto' });
+    const h = await createHarness({ baseUrl: mock.baseUrl, apiKey: KEY, mode: 'auto', web: true, autoApproveSearches: true });
     try {
+      mock.route('POST', '/api/v1/retrieval/process/web/search', { kind: 'json', body: { items: [{ link: 'https://docs.example.org/a', title: 'A', snippet: 'see https://cdn.example.net/x.js' }] } });
+      mock.route('POST', '/api/v1/retrieval/process/web', { kind: 'json', body: { content: 'Page that links to https://tracker.example.com/pixel and wss://socket.example.com' } });
       mock.enqueue(
         { kind: 'sse', chunks: sseChunks({ reasoning: 'r', content: 'first', usage: { prompt_tokens: 20, completion_tokens: 2 } }) },
         { kind: 'json', status: 503, body: { detail: 'busy' } },
@@ -104,7 +106,17 @@ describe('network egress', () => {
             ],
           }),
         },
-        { kind: 'sse', chunks: sseChunks({ content: 'Done: it printed a URL but nothing was fetched.' }) },
+        {
+          kind: 'sse',
+          chunks: sseChunks({
+            content: 'Researching.',
+            toolCalls: [
+              { name: 'web_search', arguments: { query: 'generic library question' } },
+              { name: 'web_fetch', arguments: { url: 'https://docs.example.org/a' } },
+            ],
+          }),
+        },
+        { kind: 'sse', chunks: sseChunks({ content: 'Done: it printed a URL but nothing was fetched by the extension itself.' }) },
         { kind: 'redirect', location: 'https://attacker.example/steal' },
       );
       await h.session.send('hello', h.ctx);
@@ -115,7 +127,14 @@ describe('network egress', () => {
       expect(contacted.length).toBeGreaterThan(0);
       const foreign = contacted.filter((d) => (d.via === 'dns.lookup' ? d.host !== allowed.host : d.host !== allowed.host || d.port !== allowed.port));
       expect(foreign).toEqual([]);
-      expect(tools(h.session).map((t) => t.status)).toEqual(['done', 'done', 'done']);
+      expect(tools(h.session).map((t) => [t.tool, t.status])).toEqual([
+        ['write_file', 'done'],
+        ['run_command', 'done'],
+        ['read_file', 'done'],
+        ['web_search', 'done'],
+        ['web_fetch', 'done'],
+      ]);
+      expect(h.approvalsSeen.map((a) => a.tool)).toEqual(['run_command', 'web_fetch']);
     } finally {
       await h.cleanup();
     }

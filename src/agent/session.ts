@@ -24,6 +24,8 @@ import type {
   TranscriptItem,
   UsageView,
 } from '../shared/protocol';
+import type { BrowserSession } from '../browser/session';
+import type { OwuiWeb } from '../owui/web';
 import { toolsForMode, type ToolRegistry } from '../tools/registry';
 import { truncateMiddle } from '../tools/shell/output';
 import type { ProcessManager } from '../tools/shell/processManager';
@@ -54,6 +56,9 @@ export interface AgentEnv {
   ripgrep: string | undefined;
   checkpoints: CheckpointManager;
   diffs: DiffStore;
+  web: OwuiWeb;
+  browser: () => BrowserSession;
+  closeBrowser: () => Promise<void>;
 }
 
 export interface RunContext {
@@ -71,6 +76,9 @@ export interface RunContext {
   setMode(mode: AgentMode): Promise<void>;
   loadContext(): Promise<{ sections: string[]; skills: Skill[] }>;
   onWorkspaceDirCreated(dir: string): void;
+  toolEnabled(name: string): boolean;
+  extraPromptSections(): string[];
+  autoApproveSearches(): boolean;
 }
 
 interface PendingCall {
@@ -238,7 +246,7 @@ export class AgentSession {
 
   async dispose(): Promise<void> {
     this.stop();
-    await this.env.processes.stopAll();
+    await Promise.all([this.env.processes.stopAll(), this.env.closeBrowser()]);
   }
 
   async compactNow(ctx: RunContext): Promise<void> {
@@ -312,6 +320,10 @@ export class AgentSession {
     }
   }
 
+  private availableTools(ctx: RunContext, mode: AgentMode) {
+    return toolsForMode(this.env.tools.list(), mode).filter((t) => ctx.toolEnabled(t.name));
+  }
+
   private async refreshContext(ctx: RunContext): Promise<void> {
     try {
       const loaded = await ctx.loadContext();
@@ -324,7 +336,7 @@ export class AgentSession {
   }
 
   private systemMessage(ctx: RunContext, mode: AgentMode, toolMode: 'native' | 'text', defs: ReturnType<ToolRegistry['definitions']>): string {
-    const parts = [ctx.systemPrompt(mode), ...this.contextSections];
+    const parts = [ctx.systemPrompt(mode), ...this.contextSections, ...ctx.extraPromptSections()];
     const skills = describeSkills(this.skills);
     if (skills) parts.push(skills);
     if (this.approvedPlan) parts.push(`# Approved plan\nThe user approved this plan. Follow it, and tell the user about any deviation.\n\n${this.approvedPlan}`);
@@ -337,7 +349,7 @@ export class AgentSession {
   }
 
   private async maybeCompact(ctx: RunContext, mode: AgentMode, toolMode: 'native' | 'text', signal: AbortSignal, force = false): Promise<void> {
-    const defs = this.env.tools.definitions(toolsForMode(this.env.tools.list(), mode));
+    const defs = this.env.tools.definitions(this.availableTools(ctx, mode));
     const fixed = measurePrompt([{ role: 'system', content: this.systemMessage(ctx, mode, toolMode, defs) }], toolMode === 'native' ? defs : undefined);
     const fixedTokens = ctx.calibrator.estimate(ctx.model.id, fixed);
     const budget = Math.max(1, ctx.model.contextSize - outputReserve(ctx.model.contextSize) - fixedTokens);
@@ -461,7 +473,7 @@ export class AgentSession {
     const mode = ctx.mode();
     await this.maybeCompact(ctx, mode, toolMode, signal);
     if (signal.aborted) return undefined;
-    const defs = this.env.tools.definitions(toolsForMode(this.env.tools.list(), mode));
+    const defs = this.env.tools.definitions(this.availableTools(ctx, mode));
     const system = this.systemMessage(ctx, mode, toolMode, defs);
     const messages: WireMessage[] = [{ role: 'system', content: system }, ...this.wire];
     const size = measurePrompt(messages, toolMode === 'native' ? defs : undefined);
@@ -617,6 +629,9 @@ export class AgentSession {
     const args = coerceArgs(tool.parameters, parsed.value);
     const errors = validateArgs(tool.parameters, args);
     card.title = safeTitle(tool, args);
+    if (!ctx.toolEnabled(tool.name)) {
+      return finish('error', { content: `${tool.name} is turned off in the OWUI Agent settings.`, isError: true });
+    }
     if (!toolsForMode([tool], ctx.mode()).length) {
       return finish('error', {
         content:
@@ -651,7 +666,7 @@ export class AgentSession {
       this.env.diffs.put({ id: card.id, ...prepared.preview });
       card.diffId = card.id;
     }
-    const decision = decide({ mode: ctx.mode(), access: prepared.access, allowlist: ctx.allowlist() });
+    const decision = decide({ mode: ctx.mode(), access: prepared.access, allowlist: ctx.allowlist(), autoApproveSearches: ctx.autoApproveSearches() });
     if (decision.kind === 'ask') {
       card.status = 'awaiting-approval';
       card.approval = decision.request;
@@ -669,6 +684,10 @@ export class AgentSession {
         );
       }
       if (answer.decision === 'allowAlways' && decision.request.allowAlways) await ctx.addAllowlistEntry(decision.request.allowAlways);
+      if (answer.edited !== undefined && prepared.applyEdit && answer.edited !== decision.request.editable?.value) {
+        const editError = prepared.applyEdit(answer.edited);
+        if (editError) return finish('error', { content: `The user's edit was rejected: ${editError}`, isError: true });
+      }
     }
     card.status = 'running';
     this.events.changed();
@@ -701,6 +720,8 @@ export class AgentSession {
       beforeWrite: (absolute) => this.env.checkpoints.recordBeforeWrite(absolute),
       skills: this.skills,
       workspaceDirCreated: (dir) => ctx.onWorkspaceDirCreated(dir),
+      browser: this.env.browser,
+      web: this.env.web,
       presentPlan: (plan) => this.presentPlan(plan, ctx, signal),
       setTodos: (todos) => {
         this.todos = todos;

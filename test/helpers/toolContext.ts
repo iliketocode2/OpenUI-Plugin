@@ -3,6 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import type { AskUserQuestion, TodoItem, ToolCardUpdate } from '../../src/shared/protocol';
+import { BrowserSession } from '../../src/browser/session';
+import { Egress } from '../../src/net/egress';
+import { OwuiWeb } from '../../src/owui/web';
 import { ProcessManager } from '../../src/tools/shell/processManager';
 import { ShellRegistry } from '../../src/tools/shell/shells';
 import { isPrepared, type Tool, type ToolContext, type ToolResult } from '../../src/tools/types';
@@ -35,7 +38,9 @@ export interface TestEnv {
 
 const shells = new ShellRegistry();
 
-export async function createToolEnv(opts: { ripgrep?: string; vision?: boolean; shell?: string; answers?: (q: AskUserQuestion[]) => string[][] } = {}): Promise<TestEnv> {
+export async function createToolEnv(
+  opts: { ripgrep?: string; vision?: boolean; shell?: string; answers?: (q: AskUserQuestion[]) => string[][]; baseUrl?: string; apiKey?: string } = {},
+): Promise<TestEnv> {
   const workspace = await mkdtemp(path.join(tmpdir(), 'owui tools ws '));
   const scratchpad = await mkdtemp(path.join(tmpdir(), 'owui tools scratch '));
   const updates: ToolCardUpdate[] = [];
@@ -43,6 +48,7 @@ export async function createToolEnv(opts: { ripgrep?: string; vision?: boolean; 
   const createdDirs: string[] = [];
   const processes = new ProcessManager();
   const controller = new AbortController();
+  let browser: BrowserSession | undefined;
   const ctx: ToolContext = {
     signal: controller.signal,
     callId: 'test',
@@ -60,6 +66,8 @@ export async function createToolEnv(opts: { ripgrep?: string; vision?: boolean; 
     presentPlan: async () => ({ approved: true, mode: 'ask' }),
     skills: [],
     workspaceDirCreated: (dir) => createdDirs.push(dir),
+    browser: () => (browser ??= new BrowserSession({ profileDir: path.join(scratchpad, '.browser-profile'), channel: 'auto', allowExternal: false, extraHosts: [] })),
+    web: new OwuiWeb(new Egress(() => opts.baseUrl ?? 'http://127.0.0.1:9'), async () => opts.apiKey ?? 'sk-test'),
   };
   return {
     workspace,
@@ -77,6 +85,7 @@ export async function createToolEnv(opts: { ripgrep?: string; vision?: boolean; 
       return { ...result, access: prepared.access.kind, ...(prepared.card ? { card: prepared.card } : {}) };
     },
     async cleanup() {
+      await browser?.close();
       await processes.stopAll();
       await rm(workspace, { recursive: true, force: true }).catch(() => undefined);
       await rm(scratchpad, { recursive: true, force: true }).catch(() => undefined);

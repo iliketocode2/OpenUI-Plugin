@@ -8,10 +8,24 @@ export interface PolicyInput {
   mode: AgentMode;
   access: Access;
   allowlist: string[];
+  autoApproveSearches?: boolean;
 }
 
-export function decide({ mode, access, allowlist }: PolicyInput): PolicyDecision {
+const WEB_WARNING = 'This leaves your machine: your Open WebUI server sends it to its search engine or the website, and from there to the public internet. Do not include secrets or internal names.';
+
+export function decide({ mode, access, allowlist, autoApproveSearches }: PolicyInput): PolicyDecision {
   switch (access.kind) {
+    case 'web':
+      if (access.action === 'search' && autoApproveSearches) return { kind: 'allow' };
+      return {
+        kind: 'ask',
+        request: {
+          kind: 'web',
+          question: access.action === 'search' ? 'Send this web search?' : 'Fetch this web page?',
+          warnings: [WEB_WARNING],
+          editable: { label: access.action === 'search' ? 'Query' : 'URL', value: access.value },
+        },
+      };
     case 'none':
       return { kind: 'allow' };
     case 'read': {

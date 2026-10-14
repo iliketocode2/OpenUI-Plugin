@@ -8,7 +8,11 @@ import { CheckpointManager } from '../checkpoints/checkpoints';
 import { ShadowGit } from '../checkpoints/shadowGit';
 import type { ApiKeyStore } from '../config/secrets';
 import { addAllowlistEntry, readSettings, updateModelOverride } from '../config/settings';
+import { BrowserSession } from '../browser/session';
 import { DiffStore } from '../diff/diffStore';
+import webPrompt from '../../prompts/web-untrusted.md';
+import type { OwuiWeb } from '../owui/web';
+import { BROWSER_TOOLS, WEB_TOOLS } from '../tools/registry';
 import { OWUI_DIR, loadProjectContext } from '../memory/projectMemory';
 import { discoverSkills } from '../skills/discovery';
 import { sanitizeForStorage, toMarkdown, titleFrom, type HistoryStore, type SessionRecord } from '../storage/history';
@@ -19,7 +23,7 @@ import { resolveModel, type ResolvedModel, type ServerModel } from '../owui/mode
 import type { StreamDelta } from '../owui/streamAssembler';
 import { TokenCalibrator, type CalibrationState } from '../owui/tokens';
 import type { Usage } from '../owui/types';
-import type { AgentMode, ApprovalDecision, ConnectionView, HistoryEntry, ModelView, PlanAnswer, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState } from '../shared/protocol';
+import type { AgentMode, ApprovalDecision, ConnectionView, HistoryEntry, ModelView, PlanAnswer, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState, WebStatusView } from '../shared/protocol';
 import { scratchRoot } from '../storage/scratchpad';
 import type { ToolRegistry } from '../tools/registry';
 import { ProcessManager } from '../tools/shell/processManager';
@@ -63,6 +67,7 @@ export interface ControllerDeps {
   confirm(message: string, detail: string, action: string): Promise<boolean>;
   history: HistoryStore;
   backupsRoot: string;
+  web: OwuiWeb;
   workspaceState: vscode.Memento;
   userSkillsDir: () => string;
 }
@@ -80,6 +85,7 @@ export class AgentController implements vscode.Disposable {
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> = Promise.resolve();
   private dirty = false;
+  private webStatus: WebStatusView = { enabled: false, verification: 'unverified' };
   private firstUnsavedChange = 0;
   private readonly deletedSessions = new Set<string>();
 
@@ -129,6 +135,7 @@ export class AgentController implements vscode.Disposable {
       if (seq !== this.refreshSeq) return;
       this.serverModels = models;
       this.connection = { ...conn, status: 'ok' };
+      await this.refreshWebStatus();
       if (version) this.connection.serverVersion = version;
       this.ensureSelection();
     } catch (e) {
@@ -354,6 +361,13 @@ export class AgentController implements vscode.Disposable {
     } catch {
       return;
     }
+    const profiles = path.join(this.deps.globalStorage, 'browser-profiles');
+    for (const name of await readdir(profiles).catch(() => [] as string[])) {
+      if (name === this.session.id) continue;
+      const full = path.join(profiles, name);
+      const st = await stat(full).catch(() => undefined);
+      if (st && Date.now() - st.mtimeMs > 6 * 60 * 60 * 1000) await rm(full, { recursive: true, force: true }).catch(() => undefined);
+    }
     const known = new Set((await this.deps.history.list()).map((s) => s.id));
     for (const name of names) {
       if (known.has(name) || name === this.session.id) continue;
@@ -361,6 +375,45 @@ export class AgentController implements vscode.Disposable {
       const st = await stat(full).catch(() => undefined);
       if (st && Date.now() - st.mtimeMs > maxAgeMs) await rm(full, { recursive: true, force: true }).catch(() => undefined);
     }
+  }
+
+  private async refreshWebStatus(): Promise<void> {
+    const s = readSettings();
+    if (!s.webEnabled) {
+      this.webStatus = { enabled: false, verification: 'unverified' };
+      return;
+    }
+    const info = await this.deps.web.engineInfo().catch((e: Error) => ({ status: 'error' as const, message: e.message }));
+    if (info.status === 'ok') {
+      if (!info.enabled) this.webStatus = { enabled: true, engine: info.engine, verification: 'disabled-on-server', detail: 'Web search is turned off in Open WebUI (Admin Panel → Settings → Web Search).' };
+      else if (info.engine.toLowerCase() === 'searxng') this.webStatus = { enabled: true, engine: 'searxng', verification: 'verified' };
+      else this.webStatus = { enabled: true, engine: info.engine, verification: 'other-engine', detail: `Open WebUI uses "${info.engine}" for web search, a third-party service. Use a self-hosted SearXNG to keep searches under your control.` };
+      return;
+    }
+    if (info.status === 'missing') {
+      this.webStatus = { enabled: true, verification: 'unavailable', detail: 'This Open WebUI version has no web search endpoints.' };
+      return;
+    }
+    this.webStatus = {
+      enabled: true,
+      verification: 'unverified',
+      detail:
+        info.status === 'forbidden'
+          ? 'The web search engine could not be read (this needs an admin API key that may use /api/v1/retrieval/config). Confirm the engine in the owuiAgent.web.confirmedEngine setting.'
+          : `The web search configuration could not be read: ${info.message}`,
+    };
+  }
+
+  private currentWebStatus(): WebStatusView {
+    const s = readSettings();
+    if (!s.webEnabled) return { enabled: false, verification: 'unverified' };
+    if (this.webStatus.verification === 'unverified' && s.webConfirmedEngine.trim()) {
+      const engine = s.webConfirmedEngine.trim().toLowerCase();
+      return engine === 'searxng'
+        ? { enabled: true, engine, verification: 'confirmed', detail: 'You confirmed in settings that Open WebUI uses SearXNG; the extension could not verify it.' }
+        : { enabled: true, engine, verification: 'other-engine', detail: `You set the engine to "${engine}", a third-party service.` };
+    }
+    return { ...this.webStatus, enabled: true };
   }
 
   workspaceDirCreated(dir: string): void {
@@ -453,6 +506,7 @@ export class AgentController implements vscode.Disposable {
       todos: this.session.todos,
       sovereignty: sovereignty(selected),
       noticeAcknowledged: this.deps.globalState.get<boolean>(STATE_NOTICE, false),
+      web: this.currentWebStatus(),
     };
     if (selected) state.selectedModel = selected.id;
     const usage = this.session.usage ?? (selected ? { promptTokens: 0, contextSize: selected.contextSize, contextSource: selected.contextSource, estimated: true } : undefined);
@@ -526,6 +580,14 @@ export class AgentController implements vscode.Disposable {
         return { sections, skills };
       },
       onWorkspaceDirCreated: (dir) => this.workspaceDirCreated(dir),
+      toolEnabled: (name) => {
+        const s = readSettings();
+        if (WEB_TOOLS.has(name)) return s.webEnabled;
+        if (BROWSER_TOOLS.has(name)) return s.browserEnabled;
+        return true;
+      },
+      extraPromptSections: () => (readSettings().webEnabled ? [webPrompt.replace(/^<!--[^\n]*-->\s*\n/, '').trim()] : []),
+      autoApproveSearches: () => readSettings().webAutoApproveSearches,
     };
   }
 
@@ -540,6 +602,7 @@ export class AgentController implements vscode.Disposable {
 
   private newAgentSession(record?: SessionRecord): AgentSession {
     const id = record?.id ?? randomUUID();
+    let browser: BrowserSession | undefined;
     const scratchpad = record?.scratchpad ?? path.join(scratchRoot(this.deps.globalStorage), `${new Date().toISOString().slice(0, 10)}-${id.slice(0, 8)}`);
     void mkdir(scratchpad, { recursive: true }).catch(() => undefined);
     const session = new AgentSession(
@@ -553,6 +616,23 @@ export class AgentController implements vscode.Disposable {
         ripgrep: this.deps.ripgrep,
         checkpoints: new CheckpointManager(this.shadowGit(), this.backupDir(id)),
         diffs: this.diffs,
+        web: this.deps.web,
+        browser: () => {
+          if (!browser) {
+            const s = readSettings();
+            browser = new BrowserSession({
+              profileDir: path.join(this.deps.globalStorage, 'browser-profiles', id),
+              channel: s.browserChannel,
+              allowExternal: s.browserAllowExternal,
+              extraHosts: s.browserExtraHosts,
+            });
+          }
+          return browser;
+        },
+        closeBrowser: async () => {
+          await browser?.close();
+          browser = undefined;
+        },
       },
       {
         changed: () => {

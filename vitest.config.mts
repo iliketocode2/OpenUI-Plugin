@@ -14,6 +14,7 @@ export default defineConfig({
     include: ['test/unit/**/*.test.ts', 'test/egress/**/*.test.ts'],
     environment: 'node',
     testTimeout: 20_000,
+    hookTimeout: 30_000,
     alias: {
       vscode: fileURLToPath(new URL('./test/unit/vscode-stub.ts', import.meta.url)),
     },

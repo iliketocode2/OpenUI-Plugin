@@ -20,6 +20,13 @@ export interface Settings {
   scratchpadRetentionDays: number;
   checkpointsEnabled: boolean;
   userSkillsDir: string;
+  webEnabled: boolean;
+  webAutoApproveSearches: boolean;
+  webConfirmedEngine: string;
+  browserEnabled: boolean;
+  browserChannel: 'auto' | 'chrome' | 'msedge';
+  browserAllowExternal: boolean;
+  browserExtraHosts: string[];
 }
 
 export function readSettings(): Settings {
@@ -38,6 +45,13 @@ export function readSettings(): Settings {
     maxIterations: c.get<number>('agent.maxIterations', 50),
     scratchpadRetentionDays: c.get<number>('scratchpad.retentionDays', 7),
     checkpointsEnabled: c.get<boolean>('checkpoints.enabled', true),
+    webEnabled: c.get<boolean>('web.enabled', false),
+    webAutoApproveSearches: c.get<boolean>('web.autoApproveSearches', false),
+    webConfirmedEngine: c.get<string>('web.confirmedEngine', ''),
+    browserEnabled: c.get<boolean>('browser.enabled', true),
+    browserChannel: c.get<'auto' | 'chrome' | 'msedge'>('browser.channel', 'auto'),
+    browserAllowExternal: c.get<boolean>('browser.allowExternalRequests', false),
+    browserExtraHosts: c.get<string[]>('browser.extraHosts', []),
     userSkillsDir: expandHome(c.get<string>('skills.userDir', '') || path.join(os.homedir(), '.owui-agent', 'skills')),
   };
 }

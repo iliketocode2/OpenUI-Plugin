@@ -7,6 +7,7 @@ import { onSettingsChanged, readSettings } from './config/settings';
 import { PersistentState } from './config/state';
 import { Egress } from './net/egress';
 import { OwuiClient } from './owui/client';
+import { OwuiWeb } from './owui/web';
 import { SOVEREIGNTY_NOTICE } from './shared/notice';
 import { HistoryStore } from './storage/history';
 import { pruneScratchpads } from './storage/scratchpad';
@@ -54,6 +55,7 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
     confirm: (message, detail, action) => confirmImpl(message, detail, action),
     history: new HistoryStore(path.join(workspaceData, 'sessions')),
     backupsRoot: path.join(workspaceData, 'backups'),
+    web: new OwuiWeb(egress, () => keys.get()),
     workspaceState,
     userSkillsDir: () => readSettings().userSkillsDir,
   });

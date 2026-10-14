@@ -268,6 +268,54 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Folder with your personal skills (each skill is a sub-folder with a `SKILL.md`). Defaults to `~/.owui-agent/skills`. Workspace skills live in `.owui/skills`."
+        },
+        "owuiAgent.web.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Give the agent `web_search` and `web_fetch`. They run on your Open WebUI server (configure a self-hosted SearXNG there); this extension never contacts the internet itself. Every query and URL is shown for approval first."
+        },
+        "owuiAgent.web.autoApproveSearches": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Send web searches without asking. Page fetches always ask. Queries leave your infrastructure, so leave this off unless you trust the model not to include private details."
+        },
+        "owuiAgent.web.confirmedEngine": {
+          "type": "string",
+          "default": "",
+          "enum": [
+            "",
+            "searxng",
+            "other"
+          ],
+          "markdownDescription": "If your API key cannot read Open WebUI's web search configuration (it needs admin rights), state the engine here so the sovereignty indicator can show it. `searxng` means a self-hosted SearXNG."
+        },
+        "owuiAgent.browser.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Give the agent a headless browser for local development servers (localhost only), using your installed Chrome or Edge with a fresh temporary profile. No browser is ever downloaded."
+        },
+        "owuiAgent.browser.channel": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "chrome",
+            "msedge"
+          ],
+          "default": "auto",
+          "description": "Which installed browser to use. auto tries Chrome, then Edge."
+        },
+        "owuiAgent.browser.allowExternalRequests": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**Not recommended.** Let pages opened by the browser tool load resources from the internet (fonts, CDNs, APIs). When off, every non-local request is blocked, including the browser's own background traffic to Google or Microsoft."
+        },
+        "owuiAgent.browser.extraHosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Extra host names the browser tool may open besides localhost, e.g. a dev server on your LAN (`dev.box.lan`)."
         }
       }
     }
@@ -289,6 +337,7 @@
     "diff": "9.0.0",
     "highlight.js": "11.12.0",
     "markdown-it": "15.0.2",
+    "playwright-core": "1.63.0",
     "preact": "10.29.8"
   },
   "devDependencies": {

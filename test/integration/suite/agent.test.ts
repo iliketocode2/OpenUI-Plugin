@@ -110,6 +110,37 @@ describe('OWUI Agent tools and agent loop (integration)', () => {
     assert.equal(mock.chatRequests().length, 1);
   });
 
+  it('drives a local page with the browser tool inside the extension host', async () => {
+    const http = await import('node:http');
+    const server = http.createServer((_q, r) => r.writeHead(200, { 'Content-Type': 'text/html' }).end('<title>Local Dev</title><h1>Hello from dev server</h1><script>fetch("https://cdn.example.com/x.js")</script>'));
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
+    try {
+      mock.enqueue(
+        call('', { name: 'browser', arguments: { action: 'navigate', url } }),
+        call('', { name: 'browser', arguments: { action: 'read_text' } }),
+        call('', { name: 'browser', arguments: { action: 'screenshot' } }),
+        { kind: 'sse', chunks: sseChunks({ content: 'Page checked.' }) },
+      );
+      await api.controller.send('check the dev server');
+      const cards = api.controller.viewState().transcript.filter((t): t is ToolItem => t.kind === 'tool');
+      assert.deepEqual(
+        cards.map((c) => c.status),
+        ['done', 'done', 'done'],
+        JSON.stringify(cards.map((c) => [c.title, c.status, c.output])),
+      );
+      const reqs = mock.chatRequests();
+      const nav = String((reqs[1]!.body as { messages: { content: unknown }[] }).messages.at(-1)!.content);
+      assert.match(nav, /Title: Local Dev/);
+      assert.match(nav, /Blocked requests to non-local hosts:\n- https:\/\/cdn\.example\.com\/x\.js/);
+      assert.match(String((reqs[2]!.body as { messages: { content: unknown }[] }).messages.at(-1)!.content), /Hello from dev server/);
+      assert.match(cards[2]!.image ?? '', /^data:image\/png;base64,/);
+    } finally {
+      api.controller.newSession();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
   it('stops a long command from the Stop command', async () => {
     autoApprove();
     mock.enqueue(call('', { name: 'run_command', arguments: { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Hang forever' } }));

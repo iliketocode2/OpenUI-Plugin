@@ -965,3 +965,26 @@ body.vscode-high-contrast .review {
   gap: 4px;
   padding: 0 4px 2px;
 }
+
+.approval-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.approval-edit span {
+  flex: none;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.approval-edit input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 2px 6px;
+}

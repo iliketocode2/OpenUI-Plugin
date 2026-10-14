@@ -50,8 +50,8 @@ describe('static egress rules', () => {
     const ALLOWED_URLS = [
       // XML namespace identifiers used by preact; never fetched.
       /^http:\/\/www\.w3\.org\/(?:2000\/svg|1999\/xlink|1999\/xhtml|XML\/1998\/namespace|1998\/Math\/MathML|2000\/xmlns\/?)$/,
-      // Default owuiAgent.baseUrl fallback (loopback).
-      /^http:\/\/localhost:3000$/,
+      // Loopback only: the default owuiAgent.baseUrl, the browser tool's example URL and its local refusing proxy.
+      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+\/?|:\$\{[^}]*)?$/,
       // markdown-it/linkify-it prefixes used to normalize link text into hrefs; never fetched.
       /^https?:\/\/$/,
       /^http:\/\/\$\{\w+(?:\.\w+)?\}$/,

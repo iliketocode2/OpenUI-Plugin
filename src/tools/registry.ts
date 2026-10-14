@@ -4,7 +4,9 @@ import { listDirTool, readFileTool } from './fs/read';
 import { globTool, grepTool } from './fs/search';
 import { editFileTool, writeFileTool } from './fs/write';
 import { askUserTool, exitPlanModeTool, todoWriteTool, viewImageTool } from './interactive';
+import { browserInteractTool, browserTool } from './browser';
 import { loadSkillTool, updateMemoryTool } from './knowledge';
+import { webFetchTool, webSearchTool } from './web';
 import { listProcessesTool, readProcessOutputTool, runCommandTool, startProcessTool, stopProcessTool } from './shell/tools';
 import type { Tool } from './types';
 
@@ -26,7 +28,14 @@ export const ALL_TOOLS: Tool[] = [
   exitPlanModeTool,
   loadSkillTool,
   updateMemoryTool,
+  webSearchTool,
+  webFetchTool,
+  browserTool,
+  browserInteractTool,
 ] as unknown as Tool[];
+
+export const WEB_TOOLS = new Set(['web_search', 'web_fetch']);
+export const BROWSER_TOOLS = new Set(['browser', 'browser_interact']);
 
 export class ToolRegistry {
   private readonly byName = new Map<string, Tool>();

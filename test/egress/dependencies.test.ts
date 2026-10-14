@@ -12,6 +12,9 @@ const APPROVED_RUNTIME = [
   'linkify-it',
   'markdown-it',
   'mdurl',
+  // Browser tool. Not bundled; loaded lazily. Audited: no dependencies or install scripts, browser downloads are
+  // never triggered (an installed Chrome/Edge channel is always used), and its only "telemetry" strings disable Firefox telemetry.
+  'playwright-core',
   'preact',
   'punycode.js',
   'uc.micro',

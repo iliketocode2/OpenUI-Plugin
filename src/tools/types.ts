@@ -1,4 +1,6 @@
 import type { AskUserQuestion, PlanAnswer, ToolCardUpdate, TodoItem } from '../shared/protocol';
+import type { BrowserSession } from '../browser/session';
+import type { OwuiWeb } from '../owui/web';
 import type { Skill } from '../skills/discovery';
 import type { PathGuard, ResolvedPath } from '../workspace/paths';
 import type { ProcessManager } from './shell/processManager';
@@ -55,6 +57,8 @@ export interface ToolContext {
   presentPlan(plan: string): Promise<PlanDecision>;
   skills: Skill[];
   workspaceDirCreated(dir: string): void;
+  browser(): BrowserSession;
+  web: OwuiWeb;
 }
 
 export type PlanDecision = PlanAnswer;
@@ -63,7 +67,8 @@ export type Access =
   | { kind: 'none' }
   | { kind: 'read'; paths: ResolvedPath[] }
   | { kind: 'write'; paths: ResolvedPath[] }
-  | { kind: 'command'; command: string; cwd: ResolvedPath; background: boolean };
+  | { kind: 'command'; command: string; cwd: ResolvedPath; background: boolean }
+  | { kind: 'web'; action: 'search' | 'fetch'; value: string };
 
 export interface FilePreview {
   absolute: string;
@@ -76,6 +81,7 @@ export interface Prepared {
   access: Access;
   card?: ToolCardUpdate;
   preview?: FilePreview;
+  applyEdit?(value: string): string | undefined;
   execute(): Promise<ToolResult>;
 }
 
