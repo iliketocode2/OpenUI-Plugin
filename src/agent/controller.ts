@@ -3,8 +3,11 @@ import { mkdir } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { CheckpointManager } from '../checkpoints/checkpoints';
+import { ShadowGit } from '../checkpoints/shadowGit';
 import type { ApiKeyStore } from '../config/secrets';
 import { addAllowlistEntry, readSettings, updateModelOverride } from '../config/settings';
+import { DiffStore } from '../diff/diffStore';
 import { isInsecureRemote, parseBaseUrl } from '../net/egress';
 import type { OwuiClient } from '../owui/client';
 import { HttpError, MissingApiKeyError } from '../owui/errors';
@@ -12,7 +15,7 @@ import { resolveModel, type ResolvedModel, type ServerModel } from '../owui/mode
 import type { StreamDelta } from '../owui/streamAssembler';
 import { TokenCalibrator, type CalibrationState } from '../owui/tokens';
 import type { Usage } from '../owui/types';
-import type { AgentMode, ApprovalDecision, ConnectionView, ModelView, SovereigntyLevel, ToolCardUpdate, ViewState } from '../shared/protocol';
+import type { AgentMode, ApprovalDecision, ConnectionView, ModelView, PlanAnswer, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState } from '../shared/protocol';
 import { scratchRoot } from '../storage/scratchpad';
 import type { ToolRegistry } from '../tools/registry';
 import { ProcessManager } from '../tools/shell/processManager';
@@ -50,6 +53,9 @@ export interface ControllerDeps {
   shells: ShellRegistry;
   paths: (scratchpad: string) => PathGuard;
   ripgrep: string | undefined;
+  workspaceStorage: string | undefined;
+  checkpointsEnabled: () => boolean;
+  confirm(message: string, detail: string, action: string): Promise<boolean>;
 }
 
 export class AgentController implements vscode.Disposable {
@@ -60,6 +66,8 @@ export class AgentController implements vscode.Disposable {
   private listener: ControllerListener | undefined;
   private refreshSeq = 0;
   private readonly idle = new Set<() => void>();
+  readonly diffs = new DiffStore();
+  private shadow: ShadowGit | undefined;
 
   constructor(private readonly deps: ControllerDeps) {
     this.calibrator = new TokenCalibrator(deps.globalState.get<Record<string, CalibrationState>>(STATE_CALIBRATION, {}));
@@ -154,6 +162,49 @@ export class AgentController implements vscode.Disposable {
 
   approve(itemId: string, decision: ApprovalDecision): void {
     this.session.resolveApproval(itemId, decision);
+  }
+
+  planDecision(itemId: string, answer: PlanAnswer): void {
+    this.session.resolvePlan(itemId, answer);
+  }
+
+  async review(itemId: string, absolute: string | undefined, decision: 'keep' | 'revert'): Promise<void> {
+    await this.session.reviewDecision(itemId, absolute, decision);
+  }
+
+  async rewind(userItemId: string, scope: RewindScope): Promise<string | undefined> {
+    if (this.session.busy) {
+      void vscode.window.showWarningMessage('Stop the agent before rewinding.');
+      return undefined;
+    }
+    if (scope !== 'conversation') {
+      const preview = await this.session.rewindPreview(userItemId).catch((e: Error) => e);
+      if (preview instanceof Error) {
+        void vscode.window.showErrorMessage(`Could not prepare the rewind: ${preview.message}`);
+        return undefined;
+      }
+      if (!preview) {
+        void vscode.window.showWarningMessage('No checkpoint exists for that message.');
+        return undefined;
+      }
+      if (preview.changes.length) {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        const lines = preview.changes.slice(0, 15).map((c) => `${c.action === 'delete' ? 'Delete' : 'Restore'} ${path.relative(root, c.absolute) || c.absolute}`);
+        const more = preview.changes.length > 15 ? `\n…and ${preview.changes.length - 15} more` : '';
+        const note =
+          preview.method === 'git'
+            ? 'This restores every change in the workspace since that message, including changes you made yourself. Ignored folders such as node_modules are not restored.'
+            : 'Snapshots were unavailable, so only files the agent edited are restored.';
+        const ok = await this.deps.confirm(`Rewind ${preview.changes.length} file(s)?`, `${lines.join('\n')}${more}\n\n${note}`, 'Rewind');
+        if (!ok) return undefined;
+      }
+    }
+    const result = await this.session.rewind(userItemId, scope).catch((e: Error) => {
+      void vscode.window.showErrorMessage(`Rewind failed: ${e.message}`);
+      return undefined;
+    });
+    this.emitState();
+    return result && scope !== 'code' ? result.text : undefined;
   }
 
   answer(itemId: string, answers: string[][]): void {
@@ -261,6 +312,7 @@ export class AgentController implements vscode.Disposable {
         if (!textModels.includes(model.id)) void this.deps.globalState.update(STATE_TEXT_MODE, [...textModels, model.id]);
       },
       addAllowlistEntry: (entry) => addAllowlistEntry(entry),
+      setMode: (mode) => this.setMode(mode),
     };
   }
 
@@ -286,6 +338,8 @@ export class AgentController implements vscode.Disposable {
         processes: new ProcessManager(),
         scratchpad,
         ripgrep: this.deps.ripgrep,
+        checkpoints: new CheckpointManager(this.shadowGit(), path.join(this.deps.globalStorage, 'backups', id)),
+        diffs: this.diffs,
       },
       {
         changed: () => this.emitState(),
@@ -296,6 +350,13 @@ export class AgentController implements vscode.Disposable {
       id,
     );
     return session;
+  }
+
+  private shadowGit(): ShadowGit | undefined {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root || !this.deps.workspaceStorage || !this.deps.checkpointsEnabled()) return undefined;
+    if (this.shadow?.workTree !== root) this.shadow = new ShadowGit({ gitDir: path.join(this.deps.workspaceStorage, 'checkpoints', 'git'), workTree: root });
+    return this.shadow;
   }
 
   private recordTotals(model: ResolvedModel, usage: Usage | null): void {

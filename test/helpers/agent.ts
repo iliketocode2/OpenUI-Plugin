@@ -2,12 +2,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { AgentSession, type RunContext } from '../../src/agent/session';
+import { CheckpointManager } from '../../src/checkpoints/checkpoints';
+import { ShadowGit } from '../../src/checkpoints/shadowGit';
+import { DiffStore } from '../../src/diff/diffStore';
 import { MODE_TEXT, renderSystemPrompt } from '../../src/agent/systemPrompt';
 import { Egress } from '../../src/net/egress';
 import { OwuiClient } from '../../src/owui/client';
 import { resolveModel, type ModelOverride } from '../../src/owui/models';
 import { TokenCalibrator } from '../../src/owui/tokens';
-import type { AgentMode, ApprovalDecision, AskUserQuestion, TranscriptItem } from '../../src/shared/protocol';
+import type { AgentMode, ApprovalDecision, AskUserQuestion, PlanAnswer, TranscriptItem } from '../../src/shared/protocol';
 import { ToolRegistry } from '../../src/tools/registry';
 import { ProcessManager } from '../../src/tools/shell/processManager';
 import { ShellRegistry } from '../../src/tools/shell/shells';
@@ -30,6 +33,8 @@ export interface HarnessOptions {
   stallMs?: number;
   firstResponseMs?: number;
   maxRetries?: number;
+  checkpoints?: boolean;
+  plan?: (plan: string) => PlanAnswer | undefined;
 }
 
 export interface Harness {
@@ -41,6 +46,9 @@ export interface Harness {
   warnings: string[];
   textModeSwitches: number;
   allowlist: string[];
+  modeHistory: AgentMode[];
+  diffs: DiffStore;
+  setMode(mode: AgentMode): void;
   cleanup(): Promise<void>;
 }
 
@@ -61,8 +69,20 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
   const warnings: string[] = [];
   let mode: AgentMode = opts.mode ?? 'ask';
   const harness = {} as Harness;
+  const diffs = new DiffStore();
+  const modeHistory: AgentMode[] = [];
   const session: AgentSession = new AgentSession(
-    { client, tools: new ToolRegistry(), shells, paths: new PathGuard(() => [workspace], scratchpad), processes: new ProcessManager(), scratchpad, ripgrep: opts.ripgrep },
+    {
+      client,
+      tools: new ToolRegistry(),
+      shells,
+      paths: new PathGuard(() => [workspace], scratchpad),
+      processes: new ProcessManager(),
+      scratchpad,
+      ripgrep: opts.ripgrep,
+      checkpoints: new CheckpointManager(opts.checkpoints === false ? undefined : new ShadowGit({ gitDir: path.join(scratchpad, '.shadow-git'), workTree: workspace }), path.join(scratchpad, '.backups')),
+      diffs,
+    },
     {
       changed: () => {
         for (const item of session.transcript) {
@@ -72,6 +92,10 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
             approvalsSeen.push(structuredClone(item));
             const decision = opts.approve ? opts.approve(item) : { decision: 'allow' as const };
             if (decision) queueMicrotask(() => session.resolveApproval(item.id, decision));
+          } else if (item.kind === 'plan' && item.status === 'open') {
+            handled.add(item.id);
+            const answer = opts.plan?.(item.plan);
+            if (answer) queueMicrotask(() => session.resolvePlan(item.id, answer));
           } else if (item.kind === 'question' && item.status === 'open') {
             handled.add(item.id);
             const answers = opts.answer?.(item.questions);
@@ -102,6 +126,10 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
     addAllowlistEntry: async (e) => {
       allowlist.push(e);
     },
+    setMode: async (m) => {
+      mode = m;
+      modeHistory.push(m);
+    },
   };
   Object.assign(harness, {
     session,
@@ -112,6 +140,8 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
     warnings,
     textModeSwitches: 0,
     allowlist,
+    modeHistory,
+    diffs,
     setMode: (m: AgentMode) => (mode = m),
     async cleanup() {
       await session.dispose();

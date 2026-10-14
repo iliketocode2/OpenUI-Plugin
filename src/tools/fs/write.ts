@@ -51,7 +51,9 @@ export const writeFileTool: Tool<WriteArgs> = {
     return {
       access: { kind: 'write', paths: [target] },
       card: { title, diff: diff.unified, summary: before === undefined ? 'New file' : changeSummary(diff) },
+      preview: { absolute: target.absolute, display: target.display, before: before ?? '', after: content },
       async execute() {
+        await ctx.beforeWrite(target.absolute);
         await mkdir(path.dirname(target.absolute), { recursive: true });
         await writeFile(target.absolute, content, 'utf8');
         return ok(before === undefined ? `Created ${target.display} (${plural(lines, 'line')}).` : `Overwrote ${target.display} (${plural(lines, 'line')}; ${changeSummary(diff).toLowerCase()}).`);
@@ -157,9 +159,11 @@ export const editFileTool: Tool<EditArgs> = {
     return {
       access: { kind: 'write', paths: [target] },
       card: { title: `Edit ${target.display} — ${summary}`, diff: diff.unified, summary },
+      preview: { absolute: target.absolute, display: target.display, before, after },
       async execute() {
         const current = await readFile(target.absolute, 'utf8');
         if (current !== before) return fail(`${target.display} changed on disk since the edit was prepared. Read it again and retry.`);
+        await ctx.beforeWrite(target.absolute);
         await writeFile(target.absolute, after, 'utf8');
         const count = args.replace_all ? ` (${hits.length} occurrence${hits.length === 1 ? '' : 's'})` : '';
         return ok(`Edited ${target.display}${count}: ${summary.toLowerCase()}.`);

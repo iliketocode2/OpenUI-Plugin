@@ -1,4 +1,4 @@
-import type { AskUserQuestion, ToolCardUpdate, TodoItem } from '../shared/protocol';
+import type { AskUserQuestion, PlanAnswer, ToolCardUpdate, TodoItem } from '../shared/protocol';
 import type { PathGuard, ResolvedPath } from '../workspace/paths';
 import type { ProcessManager } from './shell/processManager';
 import type { ShellRegistry } from './shell/shells';
@@ -50,7 +50,11 @@ export interface ToolContext {
   update(patch: ToolCardUpdate): void;
   ask(questions: AskUserQuestion[]): Promise<string[][]>;
   setTodos(todos: TodoItem[]): void;
+  beforeWrite(absolute: string): Promise<void>;
+  presentPlan(plan: string): Promise<PlanDecision>;
 }
+
+export type PlanDecision = PlanAnswer;
 
 export type Access =
   | { kind: 'none' }
@@ -58,9 +62,17 @@ export type Access =
   | { kind: 'write'; paths: ResolvedPath[] }
   | { kind: 'command'; command: string; cwd: ResolvedPath; background: boolean };
 
+export interface FilePreview {
+  absolute: string;
+  display: string;
+  before: string;
+  after: string;
+}
+
 export interface Prepared {
   access: Access;
   card?: ToolCardUpdate;
+  preview?: FilePreview;
   execute(): Promise<ToolResult>;
 }
 

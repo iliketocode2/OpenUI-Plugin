@@ -174,7 +174,8 @@ describe('agent loop (native tool calls)', () => {
     const t = await harness({ mode: 'auto', allowlist: ['*'] });
     mock.enqueue(call('', { name: 'run_command', arguments: { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Hang', timeout_seconds: 60 } }));
     const p = t.session.send('hang', t.ctx);
-    await new Promise((r) => setTimeout(r, 1500));
+    while (tools(t.session)[0]?.status !== 'running') await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 500));
     t.session.stop();
     await p;
     expect(tools(t.session)[0]!.status).toBe('cancelled');

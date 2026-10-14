@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { AgentController } from '../agent/controller';
 import type { StreamDelta } from '../owui/streamAssembler';
 import type { FromWebview, ToWebview, ToolCardUpdate } from '../shared/protocol';
+import { openDiff } from './diffView';
 import { createNonce, renderHtml } from './html';
 
 const FLUSH_MS = 40;
@@ -124,6 +125,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       case 'openFile':
         await openFile(m.path);
         return;
+      case 'openDiff':
+        await openDiff(this.controller.diffs, m.diffId);
+        return;
+      case 'planDecision':
+        this.controller.planDecision(m.id, m.answer);
+        return;
+      case 'review':
+        await this.controller.review(m.id, m.absolute, m.decision);
+        return;
+      case 'rewind': {
+        const text = await this.controller.rewind(m.itemId, m.scope);
+        if (text) this.post({ type: 'insertText', text });
+        return;
+      }
       case 'openLink':
         await openLinkWithConsent(m.href);
         return;

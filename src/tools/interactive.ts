@@ -115,3 +115,30 @@ export const askUserTool: Tool<{ questions: AskUserQuestion[] }> = {
     };
   },
 };
+
+export const exitPlanModeTool: Tool<{ plan: string }> = {
+  name: 'exit_plan_mode',
+  category: 'interactive',
+  description:
+    'Plan mode only. Present your finished plan (Markdown) for the user to approve. Include the goal, the approach, the files you will create or change, how you will verify the work, and open risks. If approved you can start implementing; otherwise revise using the feedback.',
+  parameters: { type: 'object', properties: { plan: { type: 'string', description: 'The complete plan in Markdown.' } }, required: ['plan'] },
+  title: () => 'Plan for approval',
+  async prepare(args, ctx) {
+    return {
+      access: { kind: 'none' },
+      async execute() {
+        const decision = await ctx.presentPlan(args.plan);
+        if (decision.approved) {
+          const how =
+            decision.mode === 'ask'
+              ? 'The user will approve each file change and command.'
+              : decision.mode === 'review'
+                ? 'File changes apply immediately and the user reviews them at the end; commands still need approval.'
+                : 'File changes apply immediately; commands still need approval unless allow-listed.';
+          return ok(`The user approved the plan. ${how} Implement it now, keeping the task list up to date.`);
+        }
+        return ok(`The user wants changes to the plan: ${decision.feedback}\nYou are still in plan mode. Revise the plan, then call exit_plan_mode again.`);
+      },
+    };
+  },
+};

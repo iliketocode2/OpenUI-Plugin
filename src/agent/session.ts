@@ -7,16 +7,21 @@ import type { StreamDelta } from '../owui/streamAssembler';
 import { RESULT_TAG, TextToolParser, describeToolsForText, extractCallsIgnoringFences, formatToolResults } from '../owui/textToolProtocol';
 import { checkTruncation, measurePrompt, outputReserve, preflight, type TokenCalibrator } from '../owui/tokens';
 import type { AssistantTurn, ContentPart, Usage, WireMessage } from '../owui/types';
+import type { CheckpointManager, PlannedChange, RewindResult } from '../checkpoints/checkpoints';
+import type { DiffStore } from '../diff/diffStore';
 import type {
   AgentMode,
   ApprovalDecision,
   AskUserQuestion,
+  PlanAnswer,
+  ReviewFile,
+  RewindScope,
   TodoItem,
   ToolCardUpdate,
   TranscriptItem,
   UsageView,
 } from '../shared/protocol';
-import type { ToolRegistry } from '../tools/registry';
+import { toolsForMode, type ToolRegistry } from '../tools/registry';
 import { truncateMiddle } from '../tools/shell/output';
 import type { ProcessManager } from '../tools/shell/processManager';
 import type { ShellRegistry } from '../tools/shell/shells';
@@ -44,6 +49,8 @@ export interface AgentEnv {
   processes: ProcessManager;
   scratchpad: string;
   ripgrep: string | undefined;
+  checkpoints: CheckpointManager;
+  diffs: DiffStore;
 }
 
 export interface RunContext {
@@ -58,6 +65,7 @@ export interface RunContext {
   warnOnce(key: string, text: string): void;
   onToolsUnsupported(): void;
   addAllowlistEntry(entry: string): Promise<void>;
+  setMode(mode: AgentMode): Promise<void>;
 }
 
 interface PendingCall {
@@ -86,6 +94,9 @@ export class AgentSession {
   private controller: AbortController | undefined;
   private readonly approvals = new Map<string, (d: ApprovalDecision) => void>();
   private readonly questions = new Map<string, (answers: string[][] | undefined) => void>();
+  private readonly plans = new Map<string, (answer: PlanAnswer | undefined) => void>();
+  private readonly turnStarts = new Map<string, { wire: number; transcript: number }>();
+  private runCheckpoint: string | undefined;
   private lastCallKey = '';
   private repeatCount = 0;
 
@@ -119,6 +130,57 @@ export class AgentSession {
     this.questions.get(itemId)?.(answers);
   }
 
+  resolvePlan(itemId: string, answer: PlanAnswer): void {
+    this.plans.get(itemId)?.(answer);
+  }
+
+  async rewindPreview(userItemId: string): Promise<{ changes: PlannedChange[]; method: 'git' | 'backups' } | undefined> {
+    const item = this.transcript.find((t) => t.id === userItemId);
+    if (!item || item.kind !== 'user' || !item.checkpoint) return undefined;
+    return this.env.checkpoints.plan(item.checkpoint);
+  }
+
+  async rewind(userItemId: string, scope: RewindScope): Promise<{ text: string; result?: RewindResult } | undefined> {
+    if (this.busy) return undefined;
+    const index = this.transcript.findIndex((t) => t.id === userItemId);
+    const item = this.transcript[index];
+    if (!item || item.kind !== 'user') return undefined;
+    let result: RewindResult | undefined;
+    if (scope !== 'conversation' && item.checkpoint) result = await this.env.checkpoints.rewind(item.checkpoint);
+    if (scope !== 'code') {
+      const start = this.turnStarts.get(userItemId);
+      if (start) {
+        this.wire.splice(start.wire);
+        this.transcript.splice(start.transcript);
+        for (const id of [...this.turnStarts.keys()]) if (!this.transcript.some((t) => t.id === id)) this.turnStarts.delete(id);
+      }
+    } else if (result) {
+      this.pushWarning(
+        `Restored the code to before "${truncateLabel(item.text)}": ${result.restored.length} file(s) restored, ${result.deleted.length} deleted. The conversation was kept; tell the agent what changed.`,
+      );
+      this.wire.push({ role: 'user', content: `[The user rewound the workspace files to the state before the message "${truncateLabel(item.text)}". Changes made after that point are gone.]` });
+      this.wire.push({ role: 'assistant', content: 'Understood. I will re-read files before relying on them.' });
+    }
+    this.events.changed();
+    return { text: item.text, ...(result ? { result } : {}) };
+  }
+
+  async reviewDecision(itemId: string, absolute: string | undefined, decision: 'keep' | 'revert'): Promise<void> {
+    const item = this.transcript.find((t) => t.id === itemId);
+    if (!item || item.kind !== 'review') return;
+    for (const f of item.files) {
+      if (f.decision || (absolute && f.absolute !== absolute)) continue;
+      if (decision === 'revert') await this.env.checkpoints.revertFile(item.checkpoint, f.absolute);
+      f.decision = decision === 'revert' ? 'reverted' : 'kept';
+    }
+    if (item.files.every((f) => f.decision)) {
+      item.status = 'done';
+      const reverted = item.files.filter((f) => f.decision === 'reverted').map((f) => f.display);
+      if (reverted.length) this.wire.push({ role: 'user', content: `[During review the user reverted these files to their earlier state: ${reverted.join(', ')}.]` }, { role: 'assistant', content: 'Noted.' });
+    }
+    this.events.changed();
+  }
+
   canResume(): boolean {
     const last = this.wire[this.wire.length - 1];
     return !this.busy && !!last && last.role !== 'assistant';
@@ -128,8 +190,22 @@ export class AgentSession {
     if (this.busy) return;
     const trimmed = text.trim();
     if (!trimmed) return;
-    this.transcript.push({ id: randomUUID(), kind: 'user', text: trimmed, ts: Date.now() });
+    const id = randomUUID();
+    this.turnStarts.set(id, { wire: this.wire.length, transcript: this.transcript.length });
+    const user: Extract<TranscriptItem, { kind: 'user' }> = { id, kind: 'user', text: trimmed, ts: Date.now() };
+    this.transcript.push(user);
+    this.controller = new AbortController();
+    this.events.changed();
+    const cp = await this.env.checkpoints.begin(trimmed);
+    user.checkpoint = cp.id;
+    this.runCheckpoint = cp.id;
+    if (cp.snapshotError) ctx.warnOnce(`checkpoint:${this.id}`, `Workspace snapshots are unavailable (${cp.snapshotError}). Rewind will only undo files the agent edited, not changes made by commands.`);
     this.wire.push({ role: 'user', content: trimmed });
+    if (this.controller.signal.aborted) {
+      this.controller = undefined;
+      this.events.changed();
+      return;
+    }
     this.lastCallKey = '';
     this.repeatCount = 0;
     await this.run(ctx);
@@ -143,10 +219,11 @@ export class AgentSession {
   async dispose(): Promise<void> {
     this.stop();
     await this.env.processes.stopAll();
+    await this.env.checkpoints.dispose();
   }
 
   private async run(ctx: RunContext): Promise<void> {
-    this.controller = new AbortController();
+    this.controller ??= new AbortController();
     const signal = this.controller.signal;
     let toolMode = ctx.toolMode;
     this.events.changed();
@@ -172,14 +249,38 @@ export class AgentSession {
     } finally {
       for (const resolve of this.approvals.values()) resolve({ decision: 'deny' });
       for (const resolve of this.questions.values()) resolve(undefined);
+      for (const resolve of this.plans.values()) resolve(undefined);
       this.controller = undefined;
+      if (ctx.mode() === 'review') this.pushReview();
       this.events.changed();
     }
   }
 
+  private pushReview(): void {
+    const cpId = this.runCheckpoint;
+    if (!cpId) return;
+    const reviewed = new Set(this.transcript.flatMap((t) => (t.kind === 'review' && t.checkpoint === cpId ? t.files.map((f) => f.absolute) : [])));
+    const changes = this.env.checkpoints.agentChangesSince(cpId).filter((c) => !reviewed.has(c.absolute));
+    if (!changes.length) return;
+    const files: ReviewFile[] = changes.map((c) => {
+      const resolved = this.env.paths.classify(c.absolute);
+      const diffId = this.lastDiffFor(c.absolute);
+      return { absolute: c.absolute, display: resolved.display, action: c.action === 'delete' ? 'added' : 'modified', ...(diffId ? { diffId } : {}) };
+    });
+    this.transcript.push({ id: randomUUID(), kind: 'review', ts: Date.now(), checkpoint: cpId, files, status: 'open' });
+  }
+
+  private lastDiffFor(absolute: string): string | undefined {
+    for (let i = this.transcript.length - 1; i >= 0; i--) {
+      const t = this.transcript[i]!;
+      if (t.kind === 'tool' && t.diffId && t.status === 'done' && this.env.diffs.get(t.diffId)?.absolute === absolute) return t.diffId;
+    }
+    return undefined;
+  }
+
   private async modelTurn(ctx: RunContext, toolMode: 'native' | 'text', signal: AbortSignal): Promise<{ calls: PendingCall[] } | 'switch-to-text' | undefined> {
     const mode = ctx.mode();
-    const defs = this.env.tools.definitions(this.env.tools.list());
+    const defs = this.env.tools.definitions(toolsForMode(this.env.tools.list(), mode));
     const system = ctx.systemPrompt(mode) + (toolMode === 'text' ? `\n\n${describeToolsForText(defs)}` : '');
     const messages: WireMessage[] = [{ role: 'system', content: system }, ...this.wire];
     const size = measurePrompt(messages, toolMode === 'native' ? defs : undefined);
@@ -335,6 +436,15 @@ export class AgentSession {
     const args = coerceArgs(tool.parameters, parsed.value);
     const errors = validateArgs(tool.parameters, args);
     card.title = safeTitle(tool, args);
+    if (!toolsForMode([tool], ctx.mode()).length) {
+      return finish('error', {
+        content:
+          ctx.mode() === 'plan'
+            ? `${tool.name} is not available in plan mode. Investigate with read-only tools, then call exit_plan_mode with your plan.`
+            : `${tool.name} is only available in plan mode.`,
+        isError: true,
+      });
+    }
     if (errors.length) return finish('error', { content: `Invalid arguments for ${tool.name}: ${errors.join('; ')}.`, isError: true });
 
     const key = `${tool.name}:${JSON.stringify(args)}`;
@@ -356,6 +466,10 @@ export class AgentSession {
     }
     if (!isPrepared(prepared)) return finish(prepared.isError ? 'error' : 'done', prepared);
     Object.assign(card, prepared.card ?? {});
+    if (prepared.preview) {
+      this.env.diffs.put({ id: card.id, ...prepared.preview });
+      card.diffId = card.id;
+    }
     const decision = decide({ mode: ctx.mode(), access: prepared.access, allowlist: ctx.allowlist() });
     if (decision.kind === 'ask') {
       card.status = 'awaiting-approval';
@@ -403,11 +517,36 @@ export class AgentSession {
         this.events.toolUpdate(card.id, patch);
       },
       ask: (questions) => this.ask(questions, signal),
+      beforeWrite: (absolute) => this.env.checkpoints.recordBeforeWrite(absolute),
+      presentPlan: (plan) => this.presentPlan(plan, ctx, signal),
       setTodos: (todos) => {
         this.todos = todos;
         this.events.changed();
       },
     };
+  }
+
+  private async presentPlan(plan: string, ctx: RunContext, signal: AbortSignal): Promise<PlanAnswer> {
+    const item: Extract<TranscriptItem, { kind: 'plan' }> = { id: randomUUID(), kind: 'plan', ts: Date.now(), plan, status: 'open' };
+    this.transcript.push(item);
+    this.events.changed();
+    const answer = signal.aborted ? undefined : await new Promise<PlanAnswer | undefined>((resolve) => this.plans.set(item.id, resolve));
+    this.plans.delete(item.id);
+    if (!answer) {
+      item.status = 'cancelled';
+      this.events.changed();
+      throw new Error('The user did not respond to the plan.');
+    }
+    if (answer.approved) {
+      item.status = 'approved';
+      item.approvedMode = answer.mode;
+      await ctx.setMode(answer.mode);
+    } else {
+      item.status = 'revise';
+      item.feedback = answer.feedback;
+    }
+    this.events.changed();
+    return answer;
   }
 
   private async ask(questions: AskUserQuestion[], signal: AbortSignal): Promise<string[][]> {
@@ -468,6 +607,11 @@ export class AgentSession {
     if (action) err.action = action;
     this.transcript.push(err);
   }
+}
+
+function truncateLabel(text: string): string {
+  const one = text.replace(/s+/g, ' ').trim();
+  return one.length > 60 ? `${one.slice(0, 57)}…` : one;
 }
 
 function safeTitle(tool: Tool, args: Record<string, unknown>): string {

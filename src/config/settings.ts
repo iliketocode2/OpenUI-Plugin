@@ -16,6 +16,7 @@ export interface Settings {
   commandAllowlist: string[];
   maxIterations: number;
   scratchpadRetentionDays: number;
+  checkpointsEnabled: boolean;
 }
 
 export function readSettings(): Settings {
@@ -33,6 +34,7 @@ export function readSettings(): Settings {
     commandAllowlist: c.get<string[]>('commands.allowlist', []),
     maxIterations: c.get<number>('agent.maxIterations', 50),
     scratchpadRetentionDays: c.get<number>('scratchpad.retentionDays', 7),
+    checkpointsEnabled: c.get<boolean>('checkpoints.enabled', true),
   };
 }
 

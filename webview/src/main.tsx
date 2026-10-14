@@ -4,6 +4,7 @@ import { SOVEREIGNTY_NOTICE } from '../../src/shared/notice';
 import type { AgentMode, ToWebview, ToolCardUpdate, TranscriptItem, ViewState } from '../../src/shared/protocol';
 import { post, vscode } from './api';
 import { renderMarkdown } from './markdown';
+import { PlanCard, ReviewCard, RewindControl } from './PlanReview';
 import { QuestionCard, TodoPanel } from './Question';
 import { ToolCard } from './ToolCard';
 
@@ -67,7 +68,7 @@ function App() {
       <Header state={state} />
       {!state.noticeAcknowledged && <Notice />}
       <Connection state={state} />
-      <Transcript items={state.transcript} />
+      <Transcript items={state.transcript} busy={busy} />
       <TodoPanel todos={state.todos} />
       <Composer busy={busy} disabled={!state.selectedModel} mode={state.mode} inputRef={inputRef} insertRef={insertRef} />
       <div class="sr-only" role="status" aria-live="polite">
@@ -217,7 +218,7 @@ function Connection({ state }: { state: ViewState }) {
   );
 }
 
-function Transcript({ items }: { items: TranscriptItem[] }) {
+function Transcript({ items, busy }: { items: TranscriptItem[]; busy: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const onScroll = () => {
@@ -240,7 +241,7 @@ function Transcript({ items }: { items: TranscriptItem[] }) {
     <main class="transcript" ref={ref} onScroll={onScroll} onClick={onClick} aria-label="Conversation" tabIndex={0}>
       {!items.length && <p class="empty">Ask a question to start.</p>}
       {items.map((item) => (
-        <Item key={item.id} item={item} />
+        <Item key={item.id} item={item} busy={busy} />
       ))}
     </main>
   );
@@ -250,7 +251,7 @@ function time(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function Item({ item }: { item: TranscriptItem }) {
+function Item({ item, busy }: { item: TranscriptItem; busy: boolean }) {
   switch (item.kind) {
     case 'user':
       return (
@@ -258,6 +259,7 @@ function Item({ item }: { item: TranscriptItem }) {
           <div class="msg-head">
             <span class="who">You</span>
             <time>{time(item.ts)}</time>
+            {item.checkpoint && <RewindControl itemId={item.id} disabled={busy} />}
           </div>
           <div class="msg-body plain">{item.text}</div>
         </article>
@@ -268,6 +270,10 @@ function Item({ item }: { item: TranscriptItem }) {
       return <ToolCard item={item} />;
     case 'question':
       return <QuestionCard item={item} />;
+    case 'plan':
+      return <PlanCard item={item} />;
+    case 'review':
+      return <ReviewCard item={item} />;
     case 'error':
       return (
         <div class="banner banner-error" role="alert">
@@ -331,8 +337,10 @@ function AssistantItem({ item }: { item: Extract<TranscriptItem, { kind: 'assist
 }
 
 const MODES: { id: AgentMode; label: string; hint: string }[] = [
+  { id: 'plan', label: 'Plan', hint: 'Read-only: the agent investigates, asks questions and writes a plan for you to approve before it changes anything.' },
   { id: 'ask', label: 'Ask before edits', hint: 'Every file change and every command that is not allow-listed asks for approval.' },
   { id: 'auto', label: 'Auto-accept edits', hint: 'File changes inside the workspace apply immediately. Commands still ask unless allow-listed.' },
+  { id: 'review', label: 'Auto-accept, review at end', hint: 'File changes apply immediately; when the agent finishes you keep or revert each changed file. Commands still ask unless allow-listed.' },
 ];
 
 function Composer({

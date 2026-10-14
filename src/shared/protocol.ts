@@ -1,6 +1,8 @@
 export type SovereigntyLevel = 'local' | 'unverified' | 'none';
 
-export type AgentMode = 'ask' | 'auto';
+export type AgentMode = 'plan' | 'ask' | 'auto' | 'review';
+
+export type RewindScope = 'code' | 'conversation' | 'both';
 
 export interface ModelView {
   id: string;
@@ -43,6 +45,7 @@ export interface ToolCardUpdate {
   summary?: string;
   image?: string;
   exitCode?: number | null;
+  diffId?: string;
 }
 
 export interface AskUserQuestion {
@@ -58,7 +61,7 @@ export interface TodoItem {
 }
 
 export type TranscriptItem =
-  | { id: string; kind: 'user'; text: string; ts: number }
+  | { id: string; kind: 'user'; text: string; ts: number; checkpoint?: string }
   | {
       id: string;
       kind: 'assistant';
@@ -71,8 +74,20 @@ export type TranscriptItem =
     }
   | ({ id: string; kind: 'tool'; ts: number; tool: string; title: string; status: ToolStatus; approval?: ApprovalRequest } & ToolCardUpdate)
   | { id: string; kind: 'question'; ts: number; questions: AskUserQuestion[]; answers?: string[][]; status: 'open' | 'answered' | 'cancelled' }
+  | { id: string; kind: 'plan'; ts: number; plan: string; status: 'open' | 'approved' | 'revise' | 'cancelled'; approvedMode?: AgentMode; feedback?: string }
+  | { id: string; kind: 'review'; ts: number; checkpoint: string; files: ReviewFile[]; status: 'open' | 'done' }
   | { id: string; kind: 'error'; text: string; ts: number; action?: 'setApiKey' | 'openSettings' | 'retry' | 'continue' }
   | { id: string; kind: 'warning'; text: string; ts: number };
+
+export interface ReviewFile {
+  absolute: string;
+  display: string;
+  action: 'modified' | 'added';
+  decision?: 'kept' | 'reverted';
+  diffId?: string;
+}
+
+export type PlanAnswer = { approved: true; mode: Exclude<AgentMode, 'plan'> } | { approved: false; feedback: string };
 
 export interface ConnectionView {
   baseUrl: string;
@@ -122,4 +137,8 @@ export type FromWebview =
   | { type: 'approve'; id: string; decision: ApprovalDecision }
   | { type: 'answer'; id: string; answers: string[][] }
   | { type: 'openFile'; path: string }
+  | { type: 'openDiff'; diffId: string }
+  | { type: 'planDecision'; id: string; answer: PlanAnswer }
+  | { type: 'rewind'; itemId: string; scope: RewindScope }
+  | { type: 'review'; id: string; absolute?: string; decision: 'keep' | 'revert' }
   | { type: 'openLink'; href: string };

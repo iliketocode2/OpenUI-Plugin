@@ -10,6 +10,7 @@ import { pruneScratchpads } from './storage/scratchpad';
 import { ToolRegistry } from './tools/registry';
 import { ShellRegistry } from './tools/shell/shells';
 import { ChatViewProvider } from './ui/chatViewProvider';
+import { DIFF_SCHEME, DiffContentProvider } from './ui/diffView';
 import { PathGuard } from './workspace/paths';
 import { locateRipgrep } from './workspace/ripgrep';
 
@@ -17,6 +18,7 @@ export interface TestApi {
   controller: AgentController;
   keys: ApiKeyStore;
   provider: ChatViewProvider;
+  setConfirm(fn: (message: string, detail: string, action: string) => Promise<boolean>): void;
 }
 
 export function activate(context: vscode.ExtensionContext): TestApi | undefined {
@@ -28,6 +30,7 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
     firstResponseTimeoutMs: () => readSettings().firstResponseTimeoutSeconds * 1000,
     maxRetries: () => readSettings().maxRetries,
   });
+  let confirmImpl = async (message: string, detail: string, action: string) => (await vscode.window.showWarningMessage(message, { modal: true, detail }, action)) === action;
   const workspaceRoots = () => (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
   const controller = new AgentController({
     client,
@@ -38,6 +41,9 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
     shells: new ShellRegistry(),
     paths: (scratchpad) => new PathGuard(workspaceRoots, scratchpad),
     ripgrep: locateRipgrep(vscode.env.appRoot),
+    workspaceStorage: context.storageUri?.fsPath,
+    checkpointsEnabled: () => readSettings().checkpointsEnabled,
+    confirm: (message, detail, action) => confirmImpl(message, detail, action),
   });
 
   const setApiKey = async () => {
@@ -53,6 +59,7 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
     controller,
     provider,
     vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, provider),
+    vscode.workspace.registerTextDocumentContentProvider(DIFF_SCHEME, new DiffContentProvider(() => controller.diffs)),
     vscode.commands.registerCommand('owuiAgent.setApiKey', setApiKey),
     vscode.commands.registerCommand('owuiAgent.clearApiKey', () => keys.clear()),
     vscode.commands.registerCommand('owuiAgent.newSession', () => controller.newSession()),
@@ -82,7 +89,16 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
   );
 
   void pruneScratchpads(globalStorage, readSettings().scratchpadRetentionDays, [controller.currentSession.scratchpad]);
-  return context.extensionMode === vscode.ExtensionMode.Test ? { controller, keys, provider } : undefined;
+  return context.extensionMode === vscode.ExtensionMode.Test
+    ? {
+        controller,
+        keys,
+        provider,
+        setConfirm: (fn) => {
+          confirmImpl = fn;
+        },
+      }
+    : undefined;
 }
 
 export function deactivate(): void {}

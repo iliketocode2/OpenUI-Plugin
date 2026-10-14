@@ -54,6 +54,8 @@ export async function createToolEnv(opts: { ripgrep?: string; vision?: boolean; 
     update: (p) => updates.push(p),
     ask: async (q) => opts.answers?.(q) ?? q.map(() => []),
     setTodos: (t) => todos.push(t),
+    beforeWrite: async () => undefined,
+    presentPlan: async () => ({ approved: true, mode: 'ask' }),
   };
   return {
     workspace,

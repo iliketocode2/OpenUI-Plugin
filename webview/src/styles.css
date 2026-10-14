@@ -744,3 +744,135 @@ body.vscode-high-contrast .tool,
 body.vscode-high-contrast .question {
   border-color: var(--vscode-contrastBorder);
 }
+
+.btn-small {
+  padding: 1px 8px;
+  font-size: 0.9em;
+}
+
+.link {
+  font: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  text-align: left;
+}
+
+.link:disabled {
+  color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
+  cursor: default;
+}
+
+.link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.rewind {
+  margin-left: auto;
+  font-size: 0.95em;
+  visibility: hidden;
+}
+
+.msg-user:hover .rewind,
+.msg-user:focus-within .rewind {
+  visibility: visible;
+}
+
+.rewind-menu {
+  margin-left: auto;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tool-actions {
+  margin: 2px 0 4px;
+}
+
+.plan,
+.review {
+  margin: 4px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 4px;
+}
+
+.plan-approved,
+.plan-revise,
+.plan-cancelled {
+  border-color: var(--vscode-widget-border, transparent);
+}
+
+.plan-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.plan-title {
+  font-weight: 600;
+}
+
+.plan-body {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.plan-feedback {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.review-files {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+.review-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  min-width: 0;
+}
+
+.review-file .link {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family);
+}
+
+.review-action {
+  flex: none;
+  width: 1.2em;
+  text-align: center;
+  font-weight: 700;
+  font-family: var(--vscode-editor-font-family);
+}
+
+.action-added {
+  color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
+}
+
+.action-modified {
+  color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
+}
+
+.review-buttons {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+}
+
+body.vscode-high-contrast .plan,
+body.vscode-high-contrast .review {
+  border-color: var(--vscode-contrastBorder);
+}

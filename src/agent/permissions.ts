@@ -39,7 +39,7 @@ export function decide({ mode, access, allowlist }: PolicyInput): PolicyDecision
       if (sensitive.length) {
         return { kind: 'ask', request: { kind: 'edit', question: `Apply this change to ${target.display}?`, warnings: ['This file may contain secrets or credentials.'] } };
       }
-      if (scratchOnly || mode === 'auto') return { kind: 'allow' };
+      if (scratchOnly || mode === 'auto' || mode === 'review') return { kind: 'allow' };
       return { kind: 'ask', request: { kind: 'edit', question: `Apply this change to ${target.display}?`, warnings: [] } };
     }
     case 'command': {

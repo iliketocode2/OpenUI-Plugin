@@ -52,6 +52,13 @@ export function ToolCard({ item }: { item: ToolItem }) {
           )}
           {item.diff && <Diff text={item.diff} />}
           {item.image && <img class="tool-image" src={item.image} alt={item.title} />}
+          {item.diffId && (
+            <div class="actions tool-actions">
+              <button class="btn btn-secondary btn-small" onClick={() => post({ type: 'openDiff', diffId: item.diffId! })}>
+                Open diff
+              </button>
+            </div>
+          )}
           {item.output && (
             <div class="io">
               <span class="io-label">OUT</span>
