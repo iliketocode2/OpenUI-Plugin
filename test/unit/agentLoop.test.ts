@@ -202,6 +202,28 @@ describe('agent loop (native tool calls)', () => {
     await t.session.send('hi', t.ctx);
     expect(body(0).params).toEqual({ think: false });
   });
+
+  it('shows an answer that arrived only as reasoning and never sends an empty assistant message', async () => {
+    const t = await harness();
+    mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: '', reasoning: 'It is 55°F and sunny in Medford.' }) }, say('ok'));
+    await t.session.send('Weather?', t.ctx);
+    const answer = t.session.transcript.find((i) => i.kind === 'assistant');
+    expect(answer && 'text' in answer ? answer.text : '').toBe('It is 55°F and sunny in Medford.');
+    await t.session.send('Thanks', t.ctx);
+    const sent = body(1).messages.filter((m) => m.role === 'assistant');
+    expect(sent.map((m) => m.content)).toEqual(['It is 55°F and sunny in Medford.']);
+  });
+
+  it('repairs a saved session that holds an assistant message with no content and no tool calls', async () => {
+    const t = await harness();
+    const record = structuredClone(t.session.toRecord('old', undefined, 'ask'));
+    record.wire.push({ role: 'user', content: 'What is the weather?' }, { role: 'assistant', content: null });
+    t.session.restore(record);
+    mock.enqueue(say('55°F'));
+    await t.session.send('Just the temperature', t.ctx);
+    expect(body(0).messages.some((m) => m.role === 'assistant')).toBe(false);
+    expect(t.session.transcript.some((i) => i.kind === 'error')).toBe(false);
+  });
 });
 
 describe('agent loop (text tool protocol)', () => {

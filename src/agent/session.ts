@@ -475,7 +475,9 @@ export class AgentSession {
     if (signal.aborted) return undefined;
     const defs = this.env.tools.definitions(this.availableTools(ctx, mode));
     const system = this.systemMessage(ctx, mode, toolMode, defs);
-    const messages: WireMessage[] = [{ role: 'system', content: system }, ...this.wire];
+    // Open WebUI 0.12 fails with HTTP 400 "'NoneType' object is not iterable" on an assistant message with neither
+    // content nor tool calls. Earlier versions could save one, so skip them here to repair old sessions too.
+    const messages: WireMessage[] = [{ role: 'system', content: system }, ...this.wire.filter((m) => !isEmptyAssistant(m))];
     const size = measurePrompt(messages, toolMode === 'native' ? defs : undefined);
     const estimate = ctx.calibrator.estimate(ctx.model.id, size);
     const verdict = preflight(estimate, ctx.model.contextSize, outputReserve(ctx.model.contextSize));
@@ -551,7 +553,7 @@ export class AgentSession {
     item.interrupted = undefined;
     item.reasoning = turn.reasoning;
     let calls: PendingCall[];
-    const content = stripThinkTags(turn.content);
+    let content = stripThinkTags(turn.content);
     if (toolMode === 'text') {
       const tail = parser.flush();
       if (tail.display) item.text += tail.display;
@@ -563,13 +565,28 @@ export class AgentSession {
         return call;
       });
       const resultAt = content.indexOf(RESULT_TAG);
-      this.wire.push({ role: 'assistant', content: resultAt === -1 ? content : content.slice(0, resultAt).trimEnd() });
+      if (resultAt !== -1) content = content.slice(0, resultAt).trimEnd();
     } else {
       item.text = turn.content;
       calls = turn.toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments }));
-      const msg: WireMessage = { role: 'assistant', content: content || null };
-      if (calls.length) msg.tool_calls = calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } }));
-      this.wire.push(msg);
+    }
+    // Some models (qwen3.5 through Ollama) occasionally put the whole final answer in the reasoning channel.
+    // Show it as the answer rather than an empty reply the user never sees.
+    if (!calls.length && !content.trim() && turn.reasoning.trim()) {
+      content = turn.reasoning.trim();
+      item.text = content;
+      item.reasoning = '';
+    }
+    if (calls.length && toolMode === 'native') {
+      this.wire.push({
+        role: 'assistant',
+        content: content || null,
+        tool_calls: calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })),
+      });
+    } else if (content.trim()) {
+      this.wire.push({ role: 'assistant', content });
+    } else if (!calls.length) {
+      this.pushWarning('The model returned an empty reply. Try asking again.');
     }
     item.text = item.text.trim() ? item.text : '';
     if (!item.text && !item.reasoning) this.removeItem(item);
@@ -818,6 +835,11 @@ export class AgentSession {
     if (action) err.action = action;
     this.transcript.push(err);
   }
+}
+
+function isEmptyAssistant(m: WireMessage): boolean {
+  if (m.role !== 'assistant' || m.tool_calls?.length) return false;
+  return typeof m.content === 'string' ? !m.content.trim() : !m.content?.length;
 }
 
 function waitFor<T>(signal: AbortSignal, onAbort: T, register: (resolve: (value: T) => void) => void): Promise<T> {
