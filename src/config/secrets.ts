@@ -1,42 +1,55 @@
 import * as vscode from 'vscode';
 
 const KEY = 'owuiAgent.apiKey';
+const OWN_WRITE_ECHO_MS = 3000;
 
 export class ApiKeyStore {
   private cached: string | undefined;
   private loaded = false;
+  private version = 0;
+  private ownWriteUntil = 0;
   private readonly emitter = new vscode.EventEmitter<void>();
   private readonly subscription: vscode.Disposable;
   readonly onDidChange = this.emitter.event;
 
-  constructor(private readonly secrets: vscode.SecretStorage) {
+  constructor(private readonly secrets: Pick<vscode.SecretStorage, 'get' | 'store' | 'delete' | 'onDidChange'>) {
     this.subscription = secrets.onDidChange((e) => {
-      if (e.key === KEY) {
-        this.loaded = false;
-        this.emitter.fire();
-      }
+      if (e.key !== KEY || Date.now() < this.ownWriteUntil) return;
+      this.version++;
+      this.loaded = false;
+      this.emitter.fire();
     });
   }
 
   async get(): Promise<string | undefined> {
     if (!this.loaded) {
-      this.cached = await this.secrets.get(KEY);
-      this.loaded = true;
+      const version = this.version;
+      const value = await this.secrets.get(KEY);
+      if (version === this.version) {
+        this.cached = value;
+        this.loaded = true;
+      }
+      return version === this.version ? value : this.get();
     }
     return this.cached;
   }
 
   async set(value: string): Promise<void> {
-    await this.secrets.store(KEY, value.trim());
-    this.cached = value.trim();
-    this.loaded = true;
-    this.emitter.fire();
+    await this.write(value.trim());
   }
 
   async clear(): Promise<void> {
-    await this.secrets.delete(KEY);
-    this.cached = undefined;
+    await this.write(undefined);
+  }
+
+  private async write(value: string | undefined): Promise<void> {
+    this.version++;
+    this.cached = value;
     this.loaded = true;
+    this.ownWriteUntil = Date.now() + OWN_WRITE_ECHO_MS;
+    if (value === undefined) await this.secrets.delete(KEY);
+    else await this.secrets.store(KEY, value);
+    this.ownWriteUntil = Date.now() + OWN_WRITE_ECHO_MS;
     this.emitter.fire();
   }
 

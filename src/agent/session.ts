@@ -484,8 +484,10 @@ export class AgentSession {
       this.pushError(
         `The next request (about ${estimate} tokens including the agent's instructions and tool definitions) does not fit in ${ctx.model.name}'s context window ` +
           `(${ctx.model.contextSize} tokens${ctx.model.contextSource === 'assumed' ? ', assumed because Open WebUI does not report it' : ''}). ` +
-          'Raise the context length for this model in Open WebUI (Admin Panel → Settings → Models → Advanced Params → Context Length) or in the owuiAgent.models setting, or start a new session.',
-        'openSettings',
+          (ctx.model.contextSource === 'assumed'
+            ? 'If your server already runs this model with a larger context, set the size with the button below (it is also sent to Ollama as num_ctx), or start a new session.'
+            : 'Raise the context size with the button below (it is also sent to Ollama as num_ctx), or start a new session.'),
+        'setContextSize',
       );
       return undefined;
     }
@@ -811,7 +813,7 @@ export class AgentSession {
     this.transcript.push({ id: randomUUID(), kind: 'warning', text, ts: Date.now() });
   }
 
-  private pushError(text: string, action?: 'setApiKey' | 'openSettings' | 'retry' | 'continue'): void {
+  private pushError(text: string, action?: 'setApiKey' | 'openSettings' | 'retry' | 'continue' | 'setContextSize'): void {
     const err: TranscriptItem = { id: randomUUID(), kind: 'error', text, ts: Date.now() };
     if (action) err.action = action;
     this.transcript.push(err);

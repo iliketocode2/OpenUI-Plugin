@@ -156,6 +156,30 @@ export class AgentController implements vscode.Disposable {
     this.emitState();
   }
 
+  async setContextSize(id: string): Promise<void> {
+    const model = id ? this.resolvedModels().find((m) => m.id === id) : this.selectedModel();
+    if (!model) return;
+    const max = model.maxContext;
+    const suggestion = model.contextSource === 'assumed' ? Math.min(16384, max ?? 16384) : model.contextSize;
+    const value = await vscode.window.showInputBox({
+      title: `Context size for ${model.name}`,
+      prompt:
+        'Tokens the model can see at once. This must match what the server runs: the extension sends it to Ollama as num_ctx, so Ollama uses it too. Larger values need more memory.' +
+        (max ? ` The model supports up to ${max.toLocaleString()}.` : ''),
+      value: String(suggestion),
+      ignoreFocusOut: true,
+      validateInput: (v) => {
+        const n = Number(v.replace(/[_,\s]/g, ''));
+        if (!Number.isInteger(n) || n < 2048) return 'Enter a whole number of at least 2048.';
+        if (max && n > max) return `This model supports at most ${max.toLocaleString()} tokens.`;
+        return undefined;
+      },
+    });
+    if (value === undefined) return;
+    await updateModelOverride(id, { contextSize: Number(value.replace(/[_,\s]/g, '')) });
+    this.emitState();
+  }
+
   async setModelThinking(id: string, thinking: boolean): Promise<void> {
     await updateModelOverride(id, { thinking });
     this.emitState();
@@ -495,6 +519,7 @@ export class AgentController implements vscode.Disposable {
       thinking: m.thinking ?? true,
       contextSize: m.contextSize,
       contextSource: m.contextSource,
+      ...(m.maxContext ? { maxContext: m.maxContext } : {}),
     }));
     const state: ViewState = {
       sessionId: this.session.id,

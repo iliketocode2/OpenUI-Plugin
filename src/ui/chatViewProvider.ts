@@ -109,6 +109,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       case 'setModelLocal':
         await this.controller.setModelLocal(m.id, m.local);
         return;
+      case 'setContextSize':
+        await this.controller.setContextSize(m.id);
+        return;
       case 'setModelThinking':
         await this.controller.setModelThinking(m.id, m.thinking);
         return;

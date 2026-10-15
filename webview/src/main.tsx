@@ -189,22 +189,24 @@ function ContextMeter({ state }: { state: ViewState }) {
   if (!u) return null;
   const assumed = u.contextSource === 'assumed';
   const pct = Math.min(100, Math.round((u.promptTokens / u.contextSize) * 100));
+  const model = state.models.find((m) => m.id === state.selectedModel);
+  const max = model?.maxContext ? ` The model supports up to ${model.maxContext.toLocaleString()}.` : '';
   const title =
     `${u.estimated ? 'About ' : ''}${u.promptTokens} of ${u.contextSize} tokens used (${pct}%). ` +
     (assumed
-      ? 'Open WebUI does not report this model\'s context length, so 4096 is assumed. Set "Context Length" in the model\'s Advanced Params in Open WebUI, or set contextSize in the owuiAgent.models setting.'
+      ? `Open WebUI does not report the context size this model runs with, so 4096 is assumed.${max} Click to set it; the value is also sent to Ollama as num_ctx.`
       : u.contextSource === 'server'
-        ? 'Context length reported by Open WebUI.'
-        : 'Context length from your owuiAgent.models setting.');
+        ? `Context size from the model's parameters in Open WebUI.${max} Click to override it.`
+        : `Context size you set for this model (also sent to Ollama as num_ctx).${max} Click to change it.`);
   return (
-    <span class="context" title={title}>
-      <meter min={0} max={u.contextSize} low={u.contextSize * 0.6} high={u.contextSize * 0.8} optimum={0} value={u.promptTokens} aria-label="Context used" />
+    <button class={`context ${assumed ? 'context-assumed' : ''}`} title={title} aria-label={`Context: ${title}`} disabled={!model} onClick={() => model && post({ type: 'setContextSize', id: model.id })}>
+      <meter min={0} max={u.contextSize} low={u.contextSize * 0.6} high={u.contextSize * 0.8} optimum={0} value={u.promptTokens} aria-hidden="true" />
       <span class="context-label">
         {u.estimated ? '~' : ''}
         {formatTokens(u.promptTokens)} / {formatTokens(u.contextSize)}
-        {assumed ? '?' : ''}
+        {assumed ? '? Set' : ''}
       </span>
-    </span>
+    </button>
   );
 }
 
@@ -329,6 +331,11 @@ function Item({ item, busy }: { item: TranscriptItem; busy: boolean }) {
               {item.action === 'retry' && (
                 <button class="btn" onClick={() => post({ type: 'retry' })}>
                   Retry
+                </button>
+              )}
+              {item.action === 'setContextSize' && (
+                <button class="btn" onClick={() => post({ type: 'setContextSize', id: '' })}>
+                  Set context size
                 </button>
               )}
               {item.action === 'continue' && (

@@ -25,6 +25,14 @@ describe('parseModelList', () => {
     ]);
   });
 
+  it('reads the model maximum from Ollama details without treating it as the running context', () => {
+    const [m] = parseModelList({ data: [{ id: 'qwen3.5:9b', info: { params: {} }, ollama: { details: { context_length: 262144 } } }] });
+    expect(m).toMatchObject({ id: 'qwen3.5:9b', maxContext: 262144 });
+    expect(m!.contextSize).toBeUndefined();
+    expect(resolveModel(m!, undefined)).toMatchObject({ contextSize: ASSUMED_CONTEXT, contextSource: 'assumed', maxContext: 262144 });
+    expect(resolveModel(m!, { contextSize: 16384 })).toMatchObject({ contextSize: 16384, contextSource: 'setting', maxContext: 262144 });
+  });
+
   it('accepts a bare array', () => {
     expect(parseModelList([{ id: 'x' }]).map((m) => m.id)).toEqual(['x']);
   });

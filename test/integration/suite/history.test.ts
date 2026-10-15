@@ -41,6 +41,11 @@ describe('OWUI Agent history (integration)', () => {
     api.controller.newSession();
     mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: 'Answer about Slack webhooks' }) });
     await api.controller.send('How do Slack webhooks work?');
+    const firstState = api.controller.viewState();
+    assert.ok(
+      firstState.transcript.some((t) => t.kind === 'assistant'),
+      `first send got no answer: model=${firstState.selectedModel} models=${firstState.models.map((m) => `${m.id}:${m.contextSize}/${m.contextSource}`).join(',')} ${JSON.stringify(firstState.transcript.map((t) => [t.kind, 'text' in t ? t.text.slice(0, 300) : '']))}`,
+    );
     const first = api.controller.viewState().sessionId;
     api.setConfirm(async () => true);
 
@@ -54,7 +59,7 @@ describe('OWUI Agent history (integration)', () => {
     assert.equal(list.find((e) => e.id === first)?.title, 'How do Slack webhooks work?');
 
     const hits = await history('webhooks');
-    assert.deepEqual(hits.map((e) => e.id), [first]);
+    assert.deepEqual(hits.map((e) => e.id), [first], JSON.stringify(hits.map((e) => [e.id === first ? 'FIRST' : e.id === second ? 'SECOND' : e.id, e.title, e.match])));
     assert.match(hits[0]!.match ?? '', /webhooks/i);
 
     await api.controller.resumeSession(first);

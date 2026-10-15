@@ -12,6 +12,7 @@ export interface ModelView {
   thinking: boolean;
   contextSize: number;
   contextSource: 'setting' | 'server' | 'assumed';
+  maxContext?: number;
 }
 
 export interface UsageView {
@@ -85,7 +86,7 @@ export type TranscriptItem =
   | { id: string; kind: 'question'; ts: number; questions: AskUserQuestion[]; answers?: string[][]; status: 'open' | 'answered' | 'cancelled' }
   | { id: string; kind: 'plan'; ts: number; plan: string; status: 'open' | 'approved' | 'revise' | 'cancelled'; approvedMode?: AgentMode; feedback?: string }
   | { id: string; kind: 'review'; ts: number; checkpoint: string; files: ReviewFile[]; status: 'open' | 'done' }
-  | { id: string; kind: 'error'; text: string; ts: number; action?: 'setApiKey' | 'openSettings' | 'retry' | 'continue' }
+  | { id: string; kind: 'error'; text: string; ts: number; action?: 'setApiKey' | 'openSettings' | 'retry' | 'continue' | 'setContextSize' }
   | { id: string; kind: 'warning'; text: string; ts: number }
   | { id: string; kind: 'notice'; text: string; ts: number };
 
@@ -149,6 +150,7 @@ export type FromWebview =
   | { type: 'selectModel'; id: string }
   | { type: 'setModelLocal'; id: string; local: boolean }
   | { type: 'setModelThinking'; id: string; thinking: boolean }
+  | { type: 'setContextSize'; id: string }
   | { type: 'setMode'; mode: AgentMode }
   | { type: 'newSession' }
   | { type: 'setApiKey' }

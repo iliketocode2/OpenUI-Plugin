@@ -7,6 +7,7 @@ export interface ServerModel {
   vision?: boolean;
   usageCapability?: boolean;
   contextSize?: number;
+  maxContext?: number;
 }
 
 export interface ModelOverride {
@@ -29,6 +30,7 @@ export interface ResolvedModel {
   local: boolean;
   thinking?: boolean;
   usageCapability?: boolean;
+  maxContext?: number;
 }
 
 export const ASSUMED_CONTEXT = 4096;
@@ -62,6 +64,9 @@ export function parseModelList(body: unknown): ServerModel[] {
     if (typeof caps?.usage === 'boolean') model.usageCapability = caps.usage;
     const ctx = positiveInt(params?.num_ctx) ?? positiveInt(options?.num_ctx);
     if (ctx) model.contextSize = ctx;
+    const details = obj(obj(m.ollama)?.details);
+    const max = positiveInt(details?.context_length) ?? positiveInt(meta?.context_length) ?? positiveInt(m.context_length);
+    if (max) model.maxContext = max;
     out.push(model);
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -87,6 +92,7 @@ export function resolveModel(server: ServerModel, override: ModelOverride | unde
     local: override?.local ?? false,
   };
   if (server.usageCapability !== undefined) resolved.usageCapability = server.usageCapability;
+  if (server.maxContext) resolved.maxContext = server.maxContext;
   if (override?.thinking !== undefined) resolved.thinking = override.thinking;
   return resolved;
 }

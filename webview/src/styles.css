@@ -995,3 +995,21 @@ body.vscode-high-contrast .review {
   border: 1px solid var(--vscode-input-border, transparent);
   padding: 2px 6px;
 }
+
+button.context {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+button.context:hover:not(:disabled) {
+  border-color: var(--vscode-focusBorder);
+}
+
+.context-assumed .context-label {
+  color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow));
+}
