@@ -202,7 +202,7 @@
           "default": 3,
           "minimum": 0,
           "maximum": 10,
-          "description": "Retries for connection errors, HTTP 429 and 5xx responses."
+          "description": "Retries for dropped or refused connections and HTTP 408, 429, 502, 503 and 504. Other errors are not retried, because each retry makes the server read the whole prompt again."
         },
         "owuiAgent.shell.windows": {
           "type": "string",
@@ -333,9 +333,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p webview/tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:egress": "vitest run test/egress",
+    "test:browser": "vitest run --config vitest.browser.config.mts",
+    "test:egress": "vitest run test/egress && vitest run --config vitest.browser.config.mts test/egress",
     "test:integration": "node esbuild.mjs && node test/integration/run.mjs",
-    "check": "npm run typecheck && npm run lint && npm test && npm run test:integration",
+    "check": "npm run typecheck && npm run lint && npm test && npm run test:browser && npm run test:integration",
     "smoke:live": "node scripts/smoke-live.mjs",
     "package": "node scripts/package-vsix.mjs",
     "smoke:agent": "node scripts/live-agent.mjs",

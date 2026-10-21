@@ -109,6 +109,25 @@ describe('agent loop (native tool calls)', () => {
     expect(approvals).toBe(1);
   });
 
+  it('answers every tool call, in order, even when something outside the tool throws mid-batch', async () => {
+    const t = await harness({ approve: () => ({ decision: 'allowAlways' }) });
+    t.ctx.addAllowlistEntry = async () => {
+      throw new Error('settings.json is read-only');
+    };
+    mock.enqueue(
+      call('', { name: 'read_file', arguments: { path: '.' } }, { name: 'run_command', arguments: { command: 'echo hi', description: 'Echo' } }, { name: 'glob', arguments: { pattern: '*' } }),
+      say('recovered'),
+    );
+    await t.session.send('go', t.ctx);
+    const next = body(1).messages;
+    const assistant = next.findIndex((m) => m.role === 'assistant' && !!m.tool_calls?.length);
+    const ids = next[assistant]!.tool_calls!.map((c) => c.id);
+    expect(next.slice(assistant + 1, assistant + 4).map((m) => (m as { tool_call_id?: string }).tool_call_id)).toEqual(ids);
+    expect(String(next[assistant + 2]!.content)).toMatch(/run_command failed: settings.json is read-only/);
+    expect(tools(t.session).map((c) => c.status)).toEqual(['done', 'error', 'done']);
+    expect(t.session.busy).toBe(false);
+  });
+
   it('returns helpful errors for unknown tools, bad JSON and invalid arguments, then continues', async () => {
     const t = await harness();
     mock.enqueue(

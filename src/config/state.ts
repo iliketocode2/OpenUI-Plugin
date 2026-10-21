@@ -1,4 +1,5 @@
 import type * as vscode from 'vscode';
+import { describeError, log } from '../log';
 
 export class PersistentState implements vscode.Memento {
   private readonly cache = new Map<string, unknown>();
@@ -20,7 +21,7 @@ export class PersistentState implements vscode.Memento {
 
   update(key: string, value: unknown): Thenable<void> {
     this.cache.set(key, value);
-    this.queue = this.queue.then(() => this.memento.update(key, value)).catch(() => undefined);
+    this.queue = this.queue.then(() => this.memento.update(key, value)).catch((e: unknown) => log.error(`Could not save extension state (${key}): ${describeError(e)}`));
     return this.queue;
   }
 

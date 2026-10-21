@@ -54,8 +54,9 @@ describe('run_command behaviour', () => {
     const r = await env.run(runCommandTool, { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Hang', timeout_seconds: 2 });
     expect(r.isError).toBe(true);
     expect(r.content).toMatch(/Timed out after 2s/);
-    expect(Date.now() - started).toBeLessThan(15_000);
-  });
+    // Generous: this catches a command that is never killed, not a slow kill on a busy machine.
+    expect(Date.now() - started).toBeLessThan(30_000);
+  }, 45_000);
 
   it('stops when the user cancels', async () => {
     setTimeout(() => env.controller.abort(), 500);

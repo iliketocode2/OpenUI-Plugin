@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     strategy:
@@ -16,17 +20,39 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      VSCODE_TEST_VERSION: 1.96.0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
+      # The grep and glob tools use ripgrep; the unit tests fail rather than skip when CI cannot find it.
+      - name: Install ripgrep (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Install ripgrep (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ripgrep
+      - name: Install ripgrep (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ripgrep -y --no-progress
+
+      - name: Cache the VS Code test build
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-test-${{ runner.os }}-${{ env.VSCODE_TEST_VERSION }}
+
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
       - name: Unit and egress tests
         run: npm test
+      - name: Browser tests (installed Chrome or Edge)
+        run: npm run test:browser
       - name: VS Code integration tests (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run test:integration
@@ -41,3 +67,4 @@ jobs:
         with:
           name: owui-agent-vsix
           path: '*.vsix'
+          if-no-files-found: error

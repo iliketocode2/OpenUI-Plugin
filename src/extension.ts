@@ -9,6 +9,7 @@ import { PersistentState } from './config/state';
 import { Egress } from './net/egress';
 import { OwuiClient } from './owui/client';
 import { OwuiWeb } from './owui/web';
+import { log, setLogger } from './log';
 import { SOVEREIGNTY_NOTICE } from './shared/notice';
 import { HistoryStore } from './storage/history';
 import { pruneScratchpads } from './storage/scratchpad';
@@ -29,6 +30,10 @@ export interface TestApi {
 let shutdown: (() => Promise<void>) | undefined;
 
 export function activate(context: vscode.ExtensionContext): TestApi | undefined {
+  const channel = vscode.window.createOutputChannel('OWUI Agent', { log: true });
+  context.subscriptions.push(channel, { dispose: () => setLogger(undefined) });
+  setLogger(channel);
+  log.info(`OWUI Agent ${String(context.extension.packageJSON.version)} activated (VS Code ${vscode.version}, ${process.platform}).`);
   const globalStorage = context.globalStorageUri.fsPath;
   const workspaceData = context.storageUri?.fsPath ?? path.join(globalStorage, 'no-workspace');
   const globalState = new PersistentState(context.globalState);

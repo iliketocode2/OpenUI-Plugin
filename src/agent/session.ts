@@ -34,6 +34,7 @@ import { coerceArgs, parseArguments, validateArgs } from '../tools/validate';
 import type { PathGuard } from '../workspace/paths';
 import { decide } from './permissions';
 import { modeNote } from './systemPrompt';
+import { describeError, log } from '../log';
 
 type AssistantItem = Extract<TranscriptItem, { kind: 'assistant' }>;
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
@@ -342,7 +343,8 @@ export class AgentSession {
       const loaded = await ctx.loadContext();
       this.contextSections = loaded.sections;
       this.skills = loaded.skills;
-    } catch {
+    } catch (e) {
+      log.warn(`Could not load AGENTS.md, project memory or skills: ${describeError(e)}`);
       this.contextSections = [];
       this.skills = [];
     }
@@ -381,6 +383,7 @@ export class AgentSession {
           ],
           ...(ctx.model.thinking !== undefined ? { think: ctx.model.thinking } : {}),
           numCtx: ctx.model.contextSize,
+          maxTokens: outputReserve(ctx.model.contextSize),
         },
         {},
         signal,
@@ -402,6 +405,7 @@ export class AgentSession {
       );
     } catch (e) {
       notice.text = signal.aborted ? 'Compaction cancelled.' : `Compaction failed: ${(e as Error).message}. The conversation was left unchanged.`;
+      if (!signal.aborted) log.warn(`Compaction failed: ${describeError(e)}`);
       this.events.changed();
       return;
     }
@@ -512,6 +516,7 @@ export class AgentSession {
     let parser = new TextToolParser();
 
     let turn: AssistantTurn;
+    const started = Date.now();
     try {
       turn = await this.env.client.chat(
         {
@@ -521,6 +526,8 @@ export class AgentSession {
           ...(ctx.model.thinking !== undefined ? { think: ctx.model.thinking } : {}),
           // Always sent, and always the same value, so Ollama never silently uses a smaller default or reloads the model.
           numCtx: ctx.model.contextSize,
+          // The preflight check keeps this much room free, so a model that loops cannot overflow the context or run forever.
+          maxTokens: outputReserve(ctx.model.contextSize),
         },
         {
           onDelta: (d) => {
@@ -555,6 +562,7 @@ export class AgentSession {
       }
       if (!item.text && !item.reasoning) this.removeItem(item);
       else item.interrupted = 'The response was interrupted.';
+      log.error(`Request to ${ctx.model.id} failed: ${describeError(e)}`);
       this.pushError(describe(e), actionFor(e));
       return undefined;
     }
@@ -600,6 +608,9 @@ export class AgentSession {
     }
     item.text = item.text.trim() ? item.text : '';
     if (!item.text && !item.reasoning) this.removeItem(item);
+    log.info(
+      `${ctx.model.id}: ${((Date.now() - started) / 1000).toFixed(1)}s, ${turn.usage ? `${turn.usage.promptTokens} prompt + ${turn.usage.completionTokens} output tokens` : `~${estimate} prompt tokens (estimated)`}, ${calls.length} tool call(s), finish ${turn.finishReason ?? 'unknown'}.`,
+    );
     this.recordUsage(ctx, size, estimate, turn.usage);
     if (!calls.length && turn.finishReason === 'length') {
       this.pushWarning('The model stopped because it reached its output limit. Ask it to continue, or raise the limit in Open WebUI.');
@@ -609,27 +620,30 @@ export class AgentSession {
   }
 
   private async executeCalls(calls: PendingCall[], toolMode: 'native' | 'text', ctx: RunContext, signal: AbortSignal): Promise<boolean> {
-    const outcomes: CallOutcome[] = [];
+    const limit = Math.max(4000, Math.min(60_000, Math.round(ctx.model.contextSize * ctx.calibrator.charsPerToken(ctx.model.id) * 0.3)));
     const images: ImageAttachment[] = [];
+    const textResults: CallOutcome[] = [];
+    // Every call gets exactly one result, in order, as soon as it is known. In native mode each result goes on the wire
+    // immediately, so a failure later in the batch can never leave an assistant tool call without its answer.
+    const record = (call: PendingCall, result: ToolResult) => {
+      const clipped = { ...result, content: truncateMiddle(result.content, limit).text };
+      if (toolMode === 'native') this.wire.push({ role: 'tool', tool_call_id: call.id, content: clipped.content });
+      else textResults.push({ call, result: clipped });
+      if (result.images) images.push(...result.images);
+    };
     let proceed = true;
     for (const call of calls) {
       if (signal.aborted || !proceed) {
-        outcomes.push({ call, result: { content: signal.aborted ? 'Cancelled by the user.' : 'Not run because the user denied the previous action.', isError: true } });
+        record(call, { content: signal.aborted ? 'Cancelled by the user.' : 'Not run because the user denied the previous action.', isError: true });
         continue;
       }
       const { result, stop } = await this.executeOne(call, ctx, signal);
-      outcomes.push({ call, result });
-      if (result.images) images.push(...result.images);
+      record(call, result);
       if (stop) proceed = false;
-    }
-    const limit = Math.max(4000, Math.min(60_000, Math.round(ctx.model.contextSize * ctx.calibrator.charsPerToken(ctx.model.id) * 0.3)));
-    const clipped = outcomes.map((o) => ({ ...o, content: truncateMiddle(o.result.content, limit).text }));
-    if (toolMode === 'native') {
-      for (const o of clipped) this.wire.push({ role: 'tool', tool_call_id: o.call.id, content: o.content });
     }
     const imageParts: ContentPart[] = images.map((img) => ({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.base64}` } }));
     if (toolMode === 'text') {
-      const text = formatToolResults(clipped.map((o) => ({ name: o.call.name, id: o.call.id, content: o.content, isError: !!o.result.isError })));
+      const text = formatToolResults(textResults.map((o) => ({ name: o.call.name, id: o.call.id, content: o.result.content, isError: !!o.result.isError })));
       this.wire.push({ role: 'user', content: imageParts.length ? [{ type: 'text', text }, ...imageParts] : text });
     } else if (imageParts.length) {
       this.wire.push({ role: 'user', content: [{ type: 'text', text: `Images requested with view_image: ${images.map((i) => i.path).join(', ')}` }, ...imageParts] });
@@ -645,9 +659,29 @@ export class AgentSession {
     const finish = (status: ToolItem['status'], result: ToolResult, extra: { stop?: boolean } = {}) => {
       card.status = status;
       if (status === 'error' && !card.output) card.output = result.content.slice(0, 4000);
+      // Only the first line: later lines of an error can quote file contents or command output.
+      if (status === 'error') log.warn(`Tool ${call.name} failed: ${result.content.split('\n', 1)[0]!.slice(0, 200)}`);
       this.events.changed();
       return { result, ...extra };
     };
+    try {
+      return await this.runTool(call, tool, card, finish, ctx, signal);
+    } catch (e) {
+      // Anything outside the tool's own try blocks (saving an allowlist entry, applying the user's edit) still ends
+      // the card and produces a result instead of escaping and leaving the call unanswered.
+      if (signal.aborted) return finish('cancelled', { content: 'Cancelled by the user.', isError: true });
+      return finish('error', { content: `${call.name} failed: ${(e as Error).message}`, isError: true });
+    }
+  }
+
+  private async runTool(
+    call: PendingCall,
+    tool: Tool | undefined,
+    card: ToolItem,
+    finish: (status: ToolItem['status'], result: ToolResult, extra?: { stop?: boolean }) => { result: ToolResult; stop?: boolean },
+    ctx: RunContext,
+    signal: AbortSignal,
+  ): Promise<{ result: ToolResult; stop?: boolean }> {
     if (call.parseError) return finish('error', { content: call.parseError, isError: true });
     if (tool && !ctx.toolEnabled(tool.name)) {
       return finish('error', { content: `${tool.name} is turned off in the OWUI Agent settings.`, isError: true });
@@ -793,6 +827,7 @@ export class AgentSession {
   }
 
   private onRetry(item: AssistantItem, info: RetryInfo): void {
+    log.warn(`Retrying request (${info.attempt}/${info.maxRetries}) in ${Math.round(info.delayMs / 1000)}s: ${info.reason}`);
     if (info.discardedPartial) {
       item.text = '';
       item.reasoning = '';

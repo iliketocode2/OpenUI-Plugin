@@ -30,6 +30,7 @@ import type { ShellRegistry } from '../tools/shell/shells';
 import type { PathGuard } from '../workspace/paths';
 import { AgentSession, type RunContext } from './session';
 import { renderSystemPrompt } from './systemPrompt';
+import { describeError, log } from '../log';
 
 const STATE_NOTICE = 'owuiAgent.sovereigntyNoticeAcknowledged';
 const STATE_MODEL = 'owuiAgent.selectedModel';
@@ -127,16 +128,22 @@ export class AgentController implements vscode.Disposable {
       return;
     }
     try {
-      const [version, models] = await Promise.all([this.deps.client.version().catch(() => undefined), this.deps.client.listModels()]);
+      const versionRequest = this.deps.client.version().catch((e: unknown) => {
+        log.warn(`Could not read the Open WebUI version: ${describeError(e)}`);
+        return undefined;
+      });
+      const [version, models] = await Promise.all([versionRequest, this.deps.client.listModels()]);
       if (seq !== this.refreshSeq) return;
       this.serverModels = models;
       this.connection = { ...conn, status: 'ok' };
       await this.refreshWebStatus();
       if (version) this.connection.serverVersion = version;
       this.ensureSelection();
+      log.info(`Connected to Open WebUI ${version ?? '(unknown version)'} at ${conn.baseUrl}: ${models.length} model(s).`);
     } catch (e) {
       if (seq !== this.refreshSeq) return;
       this.connection = { ...conn, status: 'error', error: connectionMessage(e) };
+      log.error(`Could not connect to Open WebUI at ${conn.baseUrl}: ${describeError(e)}`);
     }
     this.emitState();
   }
@@ -466,8 +473,10 @@ export class AgentController implements vscode.Disposable {
     this.dirty = false;
     this.saving = this.saving
       .then(() => (this.deletedSessions.has(record.id) ? undefined : this.deps.history.save(record)))
-      .catch(() => {
+      .catch((e: unknown) => {
+        log.error(`Could not save the session; retrying in 30 s: ${describeError(e)}`);
         this.dirty = true;
+        this.saveTimer ??= setTimeout(() => void this.saveNow(), 30_000);
       });
     return this.saving;
   }

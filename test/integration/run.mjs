@@ -38,7 +38,16 @@ try {
     extensionDevelopmentPath: process.env.OWUI_TEST_EXTENSION_PATH ?? root,
     extensionTestsPath: join(outDir, 'index.js'),
     extensionTestsEnv: { OWUI_AGENT_INTEGRATION: '1' },
-    launchArgs: [workspace, '--disable-extensions', '--disable-workspace-trust', `--user-data-dir=${userData}`, '--skip-welcome', '--skip-release-notes'],
+    launchArgs: [
+      workspace,
+      '--disable-extensions',
+      '--disable-workspace-trust',
+      `--user-data-dir=${userData}`,
+      '--skip-welcome',
+      '--skip-release-notes',
+      // Ubuntu 24.04 runners restrict the unprivileged user namespaces Electron's sandbox needs.
+      ...(process.platform === 'linux' && process.env.CI ? ['--no-sandbox'] : []),
+    ],
   });
 } catch (e) {
   console.error(e);

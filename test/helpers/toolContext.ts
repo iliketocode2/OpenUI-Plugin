@@ -20,7 +20,10 @@ export function testRipgrep(): string | undefined {
       if (found && found.startsWith(base)) return found;
     }
   }
-  return locateRipgrep(undefined);
+  const found = locateRipgrep(undefined);
+  // CI installs ripgrep, so a missing one there is a setup error, not a reason to skip the ripgrep tests silently.
+  if (!found && process.env.CI) throw new Error('ripgrep was not found on PATH; the CI workflow must install it.');
+  return found;
 }
 
 export interface TestEnv {

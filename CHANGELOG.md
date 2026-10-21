@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+Reliability:
+
+- Each tool result is added to the conversation as soon as the tool finishes, and an unexpected error (for example, saving an **Always allow** entry fails) now ends that tool with an error result instead of leaving the request unanswered and the next request malformed.
+- Retries are limited to dropped or refused connections and HTTP 408, 429, 502, 503 and 504. HTTP 500, invalid responses and stalls are no longer retried, because each retry makes the server read the whole prompt again.
+- Requests carry an output cap (`max_tokens`, the same room the context check keeps free), so a model stuck in a loop stops instead of generating until the context is full.
+- New **OWUI Agent** output channel with connection results, per-request timings and token counts, retries and errors. Keys, prompts and file contents are never logged. Failed session saves are logged and retried.
+
+Development:
+
+- Browser tests run separately (`npm run test:browser`), one file at a time with longer timeouts, so `npm test` stays reliable while a local model is using the CPU.
+- The CI workflow installs ripgrep (and fails instead of skipping the ripgrep tests without it), caches the VS Code test build, runs the browser tests and passes `--no-sandbox` to VS Code on Linux runners.
+
 Checkpoints:
 
 - Rewind now uses only the per-file backups of the agent's own edits. The private Git snapshot of the whole workspace is gone, along with the `owuiAgent.checkpoints.enabled` setting and Git as a requirement; old snapshot repositories are deleted on startup. Rewind no longer undoes changes made by shell commands, and no longer runs three Git processes before every message.

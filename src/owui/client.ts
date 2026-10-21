@@ -59,10 +59,9 @@ export class OwuiClient {
       } catch (e) {
         if (signal?.aborted) throw abortError();
         if (isAbortError(e)) throw e;
-        const retryable =
-          e instanceof HttpError
-            ? e.retryable
-            : !(e instanceof MissingApiKeyError || e instanceof EgressBlockedError || e instanceof InvalidBaseUrlError || (e instanceof StallError && e.beforeFirstResponse));
+        // Each retry makes the server read the whole prompt again, which takes minutes on CPU, so only retry failures
+        // that are likely to be transient: dropped or refused connections and overload responses.
+        const retryable = e instanceof HttpError ? e.retryable : isConnectionError(e);
         if (!retryable || attempt >= maxRetries) throw e;
         const delayMs = backoffDelay(
           attempt,
@@ -105,6 +104,7 @@ export class OwuiClient {
       if (req.tools?.length) body.tools = req.tools;
       if (req.stop?.length) body.stop = req.stop;
       if (req.temperature !== undefined) body.temperature = req.temperature;
+      if (req.maxTokens !== undefined) body.max_tokens = req.maxTokens;
       const params: Record<string, unknown> = {};
       if (req.think !== undefined) params.think = req.think;
       if (req.numCtx !== undefined) params.num_ctx = req.numCtx;
@@ -193,6 +193,14 @@ export class OwuiClient {
     const body = await res.text().catch(() => '');
     return new HttpError(res.status, body, parseRetryAfter(res.headers.get('retry-after')));
   }
+}
+
+const CONNECTION_CODES = new Set(['ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'EPIPE', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH', 'EAI_AGAIN', 'UND_ERR_SOCKET']);
+
+function isConnectionError(e: unknown): boolean {
+  if (!(e instanceof Error) || e instanceof EgressBlockedError || e instanceof InvalidBaseUrlError || e instanceof MissingApiKeyError || e instanceof StallError) return false;
+  const code = (e as NodeJS.ErrnoException).code ?? ((e as { cause?: NodeJS.ErrnoException }).cause?.code);
+  return (code !== undefined && CONNECTION_CODES.has(code)) || /socket hang up|terminated|premature close|^aborted$/i.test(e.message);
 }
 
 async function readAll(stream: ReadableStream<Uint8Array>, onChunk: () => void): Promise<string> {

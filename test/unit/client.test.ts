@@ -86,9 +86,24 @@ describe('OwuiClient', () => {
   });
 
   it('gives up after maxRetries', async () => {
-    mock.enqueue({ kind: 'json', status: 500, body: {} }, { kind: 'json', status: 500, body: {} });
+    mock.enqueue({ kind: 'json', status: 503, body: {} }, { kind: 'json', status: 503, body: {} });
     await expect(client({ retries: 1 }).chat(req)).rejects.toBeInstanceOf(HttpError);
     expect(mock.chatRequests()).toHaveLength(2);
+  });
+
+  it('does not retry failures that would only repeat, because each retry re-reads the whole prompt', async () => {
+    for (const status of [400, 500]) {
+      mock.enqueue({ kind: 'json', status, body: { detail: 'deterministic' } });
+      await expect(client({ retries: 3 }).chat(req)).rejects.toBeInstanceOf(HttpError);
+    }
+    expect(mock.chatRequests()).toHaveLength(2);
+    expect(mock.pending()).toBe(0);
+  });
+
+  it('sends max_tokens when an output cap is given', async () => {
+    mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: 'ok' }) });
+    await client().chat({ ...req, maxTokens: 4096 });
+    expect((mock.chatRequests()[0]!.body as { max_tokens?: number }).max_tokens).toBe(4096);
   });
 
   it('does not retry authentication errors', async () => {

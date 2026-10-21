@@ -63,4 +63,6 @@ export interface ChatRequest {
   temperature?: number;
   think?: boolean;
   numCtx?: number;
+  /** Output cap, including reasoning. Sent as max_tokens, which Open WebUI passes to Ollama as num_predict. */
+  maxTokens?: number;
 }

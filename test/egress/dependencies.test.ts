@@ -40,5 +40,5 @@ describe('runtime dependency allowlist', () => {
     const raw = execSync('npm ls --omit=dev --all --json', { cwd: ROOT, encoding: 'utf8' });
     const names = [...collect(JSON.parse(raw) as Tree, new Set())].sort();
     expect(names).toEqual(APPROVED_RUNTIME);
-  });
+  }, 120_000); // npm ls takes tens of seconds on a busy machine
 });

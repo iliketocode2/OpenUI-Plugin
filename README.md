@@ -7,7 +7,7 @@ Full installation and server setup: see `docs/SETUP.md` in the source repository
 ## Data sovereignty
 
 - **One destination.** The extension's network traffic goes only to the Open WebUI URL you configure. All requests pass through a single module that refuses any other origin and any redirect away from it. There is no telemetry, analytics, crash reporting, update check, CDN or font download.
-- **Local storage.** History, checkpoints, file backups and memory stay on your machine (VS Code storage and your workspace). The API key is kept in the OS keychain via VS Code SecretStorage.
+- **Local storage.** History, checkpoints, file backups and memory stay on your machine (VS Code storage and your workspace). The API key is kept in the OS keychain via VS Code SecretStorage. Diagnostics (connection results, request timings, errors) go to the **OWUI Agent** output channel, without keys, prompts or file contents.
 - **Local browser only.** The browser tool opens `localhost` pages in your installed Chrome or Edge with a throwaway profile. Every HTTP and WebSocket request to another host is blocked, including the browser's own background traffic to Google or Microsoft. WebRTC (UDP) traffic from a page is not blocked yet.
 - **Web access is opt-in and goes through your server.** Web search and page fetches are off by default. When enabled they run on your Open WebUI server (ideally backed by a self-hosted SearXNG), and you approve or edit every query and URL first.
 
@@ -73,7 +73,7 @@ For models served by Ollama, turn on the model's **Usage** capability in Open We
 | `owuiAgent.browser.allowExternalRequests` | `false` | Let pages load internet resources. Not recommended. |
 | `owuiAgent.request.firstResponseTimeoutSeconds` | `1200` | Wait for a slow (for example CPU-only) model to start answering. |
 | `owuiAgent.request.stallTimeoutSeconds` | `300` | Abort when a running response goes silent. |
-| `owuiAgent.request.maxRetries` | `3` | Retries for connection errors, 429 and 5xx responses. |
+| `owuiAgent.request.maxRetries` | `3` | Retries for dropped or refused connections and HTTP 408, 429, 502, 503 and 504. |
 | `owuiAgent.scratchpad.retentionDays` | `7` | Lifetime of the agent's throwaway scratchpad folders. |
 
 ## Limitations
@@ -89,11 +89,13 @@ For models served by Ollama, turn on the model's **Usage** capability in Open We
 ```bash
 npm ci
 npm run build           # dist/extension.js and dist/webview
-npm run check           # type-check, lint, unit and egress tests, VS Code integration tests
+npm test                # unit and egress tests (fast; no browser)
+npm run test:browser    # tests that drive your installed Chrome or Edge
+npm run check           # type-check, lint, all of the above, VS Code integration tests
 npm run package         # owui-agent-<version>.vsix (never published)
 ```
 
-- **Unit and egress tests** (Vitest): tool layer, stream parser, text tool-call parser, compaction, permissions, history, the network-egress guards, and a real headless-browser egress test.
+- **Unit and egress tests** (Vitest): tool layer, stream parser, text tool-call parser, compaction, permissions, history, and the network-egress guards. The browser tool and its egress guard are tested separately in a real headless browser (`npm run test:browser`).
 - **Integration tests:** run inside VS Code 1.96 against a mock Open WebUI that replays scripted tool-calling conversations.
 - **Live checks** against a real server (reads `OWUI_BASE_URL`, `OWUI_MODEL` and `OWUI_API_KEY` from the environment):
   - `npm run smoke:live` covers protocol details.
