@@ -8,7 +8,7 @@ OWUI Agent is a coding agent for VS Code that talks **only** to your own [Open W
 2. In VS Code: **Extensions** view → `…` menu → **Install from VSIX…** → pick `owui-agent-<version>.vsix`.
 3. Open the **OWUI Agent** view from the activity bar.
 
-Requirements: VS Code 1.96 or newer, Git (for checkpoints), and optionally Google Chrome or Microsoft Edge (for the local browser tool; no browser is ever downloaded).
+Requirements: VS Code 1.96 or newer, and optionally Google Chrome or Microsoft Edge (for the local browser tool; no browser is ever downloaded).
 
 ## 2. Connect to Open WebUI
 
@@ -64,7 +64,7 @@ On CPU-only machines a 27B model may generate only a few tokens per second, so a
 
 - **Modes** (bottom of the chat panel): *Plan* (read-only, produces a plan for approval), *Ask before edits* (default), *Auto-accept edits*, *Auto-accept, review at end*.
 - Commands always ask unless they match `owuiAgent.commands.allowlist` (read from your user settings only). Commands that change Git history or configuration, publish packages, open desktop apps, start containers or services, or use `sudo` always ask, and so do commands with redirection, substitution, nested shells, environment prefixes or paths outside the workspace.
-- Before each message the workspace is snapshotted into a private Git repository in VS Code's extension storage (never your repository), so you can **Rewind** from any of your messages.
+- Before the agent changes a file, its previous content is backed up in VS Code's extension storage, so you can **Rewind** the agent's edits from any of your messages. Changes made by shell commands are not backed up.
 - The agent's commands run on your machine and *can* reach the internet (for example `npm install`); the extension's own traffic goes only to Open WebUI (and, for the browser tool, to `localhost`).
 
 ## 5. Optional: web search through a self-hosted SearXNG
@@ -148,6 +148,5 @@ Everything stays on your machine:
 |---|---|
 | API key | OS keychain (VS Code SecretStorage) |
 | Conversation history, file backups | VS Code workspace storage for this folder |
-| Checkpoint snapshots | A private Git repository in VS Code workspace storage |
 | Scratchpad, temporary browser profiles | VS Code global extension storage (cleaned up automatically) |
 | Project memory and skills | `.owui/` in your workspace (you are offered a `.gitignore` entry) and `~/.owui-agent/skills` |

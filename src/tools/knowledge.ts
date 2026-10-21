@@ -67,6 +67,8 @@ export const updateMemoryTool: Tool<MemoryArgs> = {
         if (args.delete) await rm(topicFile.absolute, { force: true });
         else await writeFile(topicFile.absolute, afterTopic, 'utf8');
         await writeFile(indexFile.absolute, afterIndex, 'utf8');
+        await ctx.afterWrite(topicFile.absolute);
+        await ctx.afterWrite(indexFile.absolute);
         if (!owuiExisted) ctx.workspaceDirCreated(path.join(root, OWUI_DIR));
         return ok(args.delete ? `Removed memory topic ${topic}.` : `Saved memory topic ${topic} (${topicFile.display}).`);
       },

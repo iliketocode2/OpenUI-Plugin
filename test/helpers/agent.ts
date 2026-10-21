@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { AgentSession, type RunContext } from '../../src/agent/session';
 import { CheckpointManager } from '../../src/checkpoints/checkpoints';
-import { ShadowGit } from '../../src/checkpoints/shadowGit';
 import { DiffStore } from '../../src/diff/diffStore';
 import { loadProjectContext } from '../../src/memory/projectMemory';
 import { discoverSkills } from '../../src/skills/discovery';
@@ -41,7 +40,6 @@ export interface HarnessOptions {
   web?: boolean;
   autoApproveSearches?: boolean;
   browser?: boolean;
-  checkpoints?: boolean;
   contextSize?: number;
   userSkillsDir?: string;
 }
@@ -93,7 +91,7 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
       processes: new ProcessManager(),
       scratchpad,
       ripgrep: opts.ripgrep,
-      checkpoints: new CheckpointManager(opts.checkpoints === false ? undefined : new ShadowGit({ gitDir: path.join(scratchpad, '.shadow-git'), workTree: workspace }), path.join(scratchpad, '.backups')),
+      checkpoints: new CheckpointManager(path.join(scratchpad, '.backups')),
       diffs,
       web: new OwuiWeb(egress, async () => opts.apiKey),
       browser: () => (browser ??= new BrowserSession({ profileDir: path.join(scratchpad, '.browser-profile'), channel: 'auto', allowExternal: false, extraHosts: [] })),

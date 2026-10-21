@@ -54,6 +54,7 @@ export interface ToolContext {
   ask(questions: AskUserQuestion[]): Promise<string[][]>;
   setTodos(todos: TodoItem[]): void;
   beforeWrite(absolute: string): Promise<void>;
+  afterWrite(absolute: string): Promise<void>;
   skills: Skill[];
   workspaceDirCreated(dir: string): void;
   browser(): BrowserSession;

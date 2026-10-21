@@ -5,7 +5,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { CheckpointManager } from '../checkpoints/checkpoints';
-import { ShadowGit } from '../checkpoints/shadowGit';
 import type { ApiKeyStore } from '../config/secrets';
 import { addAllowlistEntry, readSettings, updateModelOverride } from '../config/settings';
 import { BrowserSession } from '../browser/session';
@@ -62,8 +61,6 @@ export interface ControllerDeps {
   shells: ShellRegistry;
   paths: (scratchpad: string) => PathGuard;
   ripgrep: string | undefined;
-  workspaceStorage: string | undefined;
-  checkpointsEnabled: () => boolean;
   confirm(message: string, detail: string, action: string): Promise<boolean>;
   history: HistoryStore;
   backupsRoot: string;
@@ -81,7 +78,6 @@ export class AgentController implements vscode.Disposable {
   private refreshSeq = 0;
   private readonly idle = new Set<() => void>();
   readonly diffs = new DiffStore();
-  private shadow: ShadowGit | undefined;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> = Promise.resolve();
   private dirty = false;
@@ -234,15 +230,15 @@ export class AgentController implements vscode.Disposable {
         void vscode.window.showWarningMessage('No checkpoint exists for that message.');
         return undefined;
       }
-      if (preview.changes.length) {
+      if (preview.length) {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        const lines = preview.changes.slice(0, 15).map((c) => `${c.action === 'delete' ? 'Delete' : 'Restore'} ${path.relative(root, c.absolute) || c.absolute}`);
-        const more = preview.changes.length > 15 ? `\n…and ${preview.changes.length - 15} more` : '';
-        const note =
-          preview.method === 'git'
-            ? 'This restores every change in the workspace since that message, including changes you made yourself. Ignored folders such as node_modules are not restored.'
-            : 'Snapshots were unavailable, so only files the agent edited are restored.';
-        const ok = await this.deps.confirm(`Rewind ${preview.changes.length} file(s)?`, `${lines.join('\n')}${more}\n\n${note}`, 'Rewind');
+        const verb = { restore: 'Restore', delete: 'Delete', skip: 'Cannot restore (not backed up)' } as const;
+        const lines = preview.slice(0, 15).map((c) => `${verb[c.action]} ${path.relative(root, c.absolute) || c.absolute}${c.changedSince ? ' (changed after the agent edited it)' : ''}`);
+        const more = preview.length > 15 ? `\n…and ${preview.length - 15} more` : '';
+        const changed = preview.filter((c) => c.changedSince && c.action !== 'skip').length;
+        const notes = ["This undoes the agent's file edits, not changes made by shell commands."];
+        if (changed) notes.push(`${changed} file(s) changed after the agent's last edit; rewinding discards those later changes too.`);
+        const ok = await this.deps.confirm(`Rewind ${preview.length} file(s)?`, `${lines.join('\n')}${more}\n\n${notes.join(' ')}`, 'Rewind');
         if (!ok) return undefined;
       }
     }
@@ -633,7 +629,7 @@ export class AgentController implements vscode.Disposable {
         processes: new ProcessManager(),
         scratchpad,
         ripgrep: this.deps.ripgrep,
-        checkpoints: new CheckpointManager(this.shadowGit(), this.backupDir(id)),
+        checkpoints: new CheckpointManager(this.backupDir(id)),
         diffs: this.diffs,
         web: this.deps.web,
         browser: () => {
@@ -676,13 +672,6 @@ export class AgentController implements vscode.Disposable {
 
   private backupDir(id: string): string {
     return path.join(this.deps.backupsRoot, id);
-  }
-
-  private shadowGit(): ShadowGit | undefined {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!root || !this.deps.workspaceStorage || !this.deps.checkpointsEnabled()) return undefined;
-    if (this.shadow?.workTree !== root) this.shadow = new ShadowGit({ gitDir: path.join(this.deps.workspaceStorage, 'checkpoints', 'git'), workTree: root });
-    return this.shadow;
   }
 
   private recordTotals(model: ResolvedModel, usage: Usage | null): void {

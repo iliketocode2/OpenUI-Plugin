@@ -7,8 +7,8 @@ export interface SerializedCheckpoint {
   id: string;
   label: string;
   ts: number;
-  sha?: string;
   originals: [string, string | null][];
+  written?: [string, string | null][];
 }
 
 export interface SessionRecord {

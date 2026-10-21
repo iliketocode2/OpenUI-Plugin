@@ -120,8 +120,8 @@ describe('diffs and rewind', () => {
     expect(t.diffs.get(card.diffId!)).toMatchObject({ before: 'before\n', after: 'after\n', display: 'd.txt' });
   });
 
-  it('rewinds code and conversation to before a message, including command output', async () => {
-    const t = await harness({ mode: 'auto', allowlist: ['*'] });
+  it("rewinds the agent's edits and the conversation to before a message, but not command side effects", async () => {
+    const t = await harness({ mode: 'auto' });
     await writeFile(path.join(t.workspace, 'r.txt'), 'v1');
     mock.enqueue(call('', { name: 'write_file', arguments: { path: 'r.txt', content: 'v2' } }), say('first done'));
     await t.session.send('first', t.ctx);
@@ -132,15 +132,13 @@ describe('diffs and rewind', () => {
     );
     await t.session.send('second', t.ctx);
     expect(await read(t, 'r.txt')).toBe('v3');
-    expect(await read(t, 'gen.txt')).toBe('g');
     const second = t.session.transcript.filter((x) => x.kind === 'user')[1]!;
     const preview = await t.session.rewindPreview(second.id);
-    expect(preview?.method).toBe('git');
-    expect(preview?.changes.map((c) => path.basename(c.absolute)).sort()).toEqual(['gen.txt', 'r.txt']);
+    expect(preview?.map((c) => path.basename(c.absolute))).toEqual(['r.txt']);
     const res = await t.session.rewind(second.id, 'both');
     expect(res?.text).toBe('second');
     expect(await read(t, 'r.txt')).toBe('v2');
-    await expect(read(t, 'gen.txt')).rejects.toThrow();
+    expect(await read(t, 'gen.txt')).toBe('g');
     expect(t.session.transcript.filter((x) => x.kind === 'user').map((x) => (x as { text: string }).text)).toEqual(['first']);
     expect(t.session.wireMessages().at(-1)).toMatchObject({ role: 'assistant', content: 'first done' });
   });
@@ -156,21 +154,9 @@ describe('diffs and rewind', () => {
     expect(String(t.session.wireMessages().at(-2)!.content)).toMatch(/rewound the workspace files/);
     expect(t.session.transcript.some((x) => x.kind === 'warning' && /Restored the code/.test(x.text))).toBe(true);
   });
-
-  it('rewinds agent edits from backups when checkpoints are disabled', async () => {
-    const t = await harness({ mode: 'auto', checkpoints: false });
-    await writeFile(path.join(t.workspace, 'b.txt'), 'orig');
-    mock.enqueue(call('', { name: 'write_file', arguments: { path: 'b.txt', content: 'changed' } }), say('done'));
-    await t.session.send('change it', t.ctx);
-    expect(t.warnings.join(' ')).toMatch(/snapshots are unavailable/i);
-    const user = t.session.transcript.find((x) => x.kind === 'user')!;
-    expect((await t.session.rewindPreview(user.id))?.method).toBe('backups');
-    await t.session.rewind(user.id, 'both');
-    expect(await read(t, 'b.txt')).toBe('orig');
-  });
 });
 
-describe('stop during the pre-request snapshot', () => {
+describe('stop right after sending', () => {
   it('stops cleanly before any model request is made', async () => {
     const t = await harness({ mode: 'auto' });
     const p = t.session.send('hello', t.ctx);

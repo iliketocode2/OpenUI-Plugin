@@ -62,6 +62,7 @@ export async function createToolEnv(
     update: (p) => updates.push(p),
     ask: async (q) => opts.answers?.(q) ?? q.map(() => []),
     setTodos: (t) => todos.push(t),
+    afterWrite: async () => undefined,
     beforeWrite: async () => undefined,
     skills: [],
     workspaceDirCreated: (dir) => createdDirs.push(dir),

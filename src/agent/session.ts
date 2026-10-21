@@ -156,7 +156,7 @@ export class AgentSession {
     this.questions.get(itemId)?.(answers);
   }
 
-  async rewindPreview(userItemId: string): Promise<{ changes: PlannedChange[]; method: 'git' | 'backups' } | undefined> {
+  async rewindPreview(userItemId: string): Promise<PlannedChange[] | undefined> {
     const item = this.transcript.find((t) => t.id === userItemId);
     if (!item || item.kind !== 'user' || !item.checkpoint) return undefined;
     return this.env.checkpoints.plan(item.checkpoint);
@@ -168,7 +168,12 @@ export class AgentSession {
     const item = this.transcript[index];
     if (!item || item.kind !== 'user') return undefined;
     let result: RewindResult | undefined;
-    if (scope !== 'conversation' && item.checkpoint) result = await this.env.checkpoints.rewind(item.checkpoint);
+    if (scope !== 'conversation' && item.checkpoint) {
+      result = await this.env.checkpoints.rewind(item.checkpoint);
+      const display = (files: string[]) => files.map((f) => this.env.paths.classify(f).display).join(', ');
+      if (result.skipped.length) this.pushWarning(`Not restored because they were not backed up (larger than 20 MB, or not regular files): ${display(result.skipped)}.`);
+      if (result.failed.length) this.pushWarning(`Could not restore: ${display(result.failed)}. Check whether another program has them open.`);
+    }
     if (scope !== 'code' && !this.turnStarts.has(userItemId)) {
       this.pushWarning(
         result
@@ -202,7 +207,11 @@ export class AgentSession {
     if (!item || item.kind !== 'review' || this.busy) return;
     for (const f of item.files) {
       if (f.decision || (absolute && f.absolute !== absolute)) continue;
-      if (decision === 'revert') await this.env.checkpoints.revertFile(item.checkpoint, f.absolute);
+      if (decision === 'revert' && !(await this.env.checkpoints.revertFile(item.checkpoint, f.absolute).catch(() => false))) {
+        this.pushWarning(`Could not revert ${f.display}.`);
+        f.decision = 'kept';
+        continue;
+      }
       f.decision = decision === 'revert' ? 'reverted' : 'kept';
     }
     if (item.files.every((f) => f.decision)) {
@@ -228,16 +237,10 @@ export class AgentSession {
     this.transcript.push(user);
     this.controller = new AbortController();
     this.events.changed();
-    const cp = await this.env.checkpoints.begin(trimmed);
+    const cp = this.env.checkpoints.begin(trimmed);
     user.checkpoint = cp.id;
     this.runCheckpoint = cp.id;
-    if (cp.snapshotError) ctx.warnOnce(`checkpoint:${this.id}`, `Workspace snapshots are unavailable (${cp.snapshotError}). Rewind will only undo files the agent edited, not changes made by commands.`);
     this.wire.push({ role: 'user', content: this.withModeNote(trimmed, ctx.mode()) });
-    if (this.controller.signal.aborted) {
-      this.controller = undefined;
-      this.events.changed();
-      return;
-    }
     this.lastCallKey = '';
     this.repeatCount = 0;
     await this.run(ctx);
@@ -462,7 +465,7 @@ export class AgentSession {
     const cpId = this.runCheckpoint;
     if (!cpId) return;
     const reviewed = new Set(this.transcript.flatMap((t) => (t.kind === 'review' && t.checkpoint === cpId ? t.files.map((f) => f.absolute) : [])));
-    const changes = this.env.checkpoints.agentChangesSince(cpId).filter((c) => !reviewed.has(c.absolute));
+    const changes = this.env.checkpoints.agentChangesSince(cpId).filter((c) => c.action !== 'skip' && !reviewed.has(c.absolute));
     if (!changes.length) return;
     const files: ReviewFile[] = changes.map((c) => {
       const resolved = this.env.paths.classify(c.absolute);
@@ -742,6 +745,7 @@ export class AgentSession {
       },
       ask: (questions) => this.ask(questions, signal),
       beforeWrite: (absolute) => this.env.checkpoints.recordBeforeWrite(absolute),
+      afterWrite: (absolute) => this.env.checkpoints.recordAfterWrite(absolute),
       skills: this.skills,
       workspaceDirCreated: (dir) => ctx.onWorkspaceDirCreated(dir),
       browser: this.env.browser,

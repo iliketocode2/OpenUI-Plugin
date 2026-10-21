@@ -56,6 +56,7 @@ export const writeFileTool: Tool<WriteArgs> = {
         await ctx.beforeWrite(target.absolute);
         await mkdir(path.dirname(target.absolute), { recursive: true });
         await writeFile(target.absolute, content, 'utf8');
+        await ctx.afterWrite(target.absolute);
         return ok(before === undefined ? `Created ${target.display} (${plural(lines, 'line')}).` : `Overwrote ${target.display} (${plural(lines, 'line')}; ${changeSummary(diff).toLowerCase()}).`);
       },
     };
@@ -167,6 +168,7 @@ export const editFileTool: Tool<EditArgs> = {
         if (current !== before) return fail(`${target.display} changed on disk since the edit was prepared. Read it again and retry.`);
         await ctx.beforeWrite(target.absolute);
         await writeFile(target.absolute, after, 'utf8');
+        await ctx.afterWrite(target.absolute);
         const count = args.replace_all ? ` (${hits.length} occurrence${hits.length === 1 ? '' : 's'})` : '';
         return ok(`Edited ${target.display}${count}: ${summary.toLowerCase()}.`);
       },

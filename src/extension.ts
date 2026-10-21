@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { AgentController } from './agent/controller';
@@ -50,8 +51,6 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
     shells: new ShellRegistry(),
     paths: (scratchpad) => new PathGuard(workspaceRoots, scratchpad),
     ripgrep: locateRipgrep(vscode.env.appRoot),
-    workspaceStorage: context.storageUri?.fsPath,
-    checkpointsEnabled: () => readSettings().checkpointsEnabled,
     confirm: (message, detail, action) => confirmImpl(message, detail, action),
     history: new HistoryStore(path.join(workspaceData, 'sessions')),
     backupsRoot: path.join(workspaceData, 'backups'),
@@ -111,6 +110,8 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
     await Promise.all([globalState.flush(), workspaceState.flush()]);
   };
   void controller.pruneOrphanBackups();
+  // Versions up to 0.1.0 kept a shadow Git repository of the workspace here; it is no longer used.
+  if (context.storageUri) void rm(path.join(context.storageUri.fsPath, 'checkpoints'), { recursive: true, force: true }).catch(() => undefined);
   void pruneScratchpads(globalStorage, readSettings().scratchpadRetentionDays, [controller.currentSession.scratchpad]);
   return context.extensionMode === vscode.ExtensionMode.Test
     ? {

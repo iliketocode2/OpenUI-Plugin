@@ -18,7 +18,6 @@ export interface Settings {
   commandAllowlist: string[];
   maxIterations: number;
   scratchpadRetentionDays: number;
-  checkpointsEnabled: boolean;
   userSkillsDir: string;
   webEnabled: boolean;
   webAutoApproveSearches: boolean;
@@ -44,7 +43,6 @@ export function readSettings(): Settings {
     commandAllowlist: c.get<string[]>('commands.allowlist', []),
     maxIterations: c.get<number>('agent.maxIterations', 50),
     scratchpadRetentionDays: c.get<number>('scratchpad.retentionDays', 7),
-    checkpointsEnabled: c.get<boolean>('checkpoints.enabled', true),
     webEnabled: c.get<boolean>('web.enabled', false),
     webAutoApproveSearches: c.get<boolean>('web.autoApproveSearches', false),
     webConfirmedEngine: c.get<string>('web.confirmedEngine', ''),

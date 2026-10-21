@@ -29,7 +29,7 @@ What the extension cannot guarantee:
 
   Use the auto-accept modes only on repositories you trust. File changes apply without asking and allow-listed commands run with your privileges, and instructions hidden in files, command output or web pages can steer the model. Changes to `.git/` and `.vscode/` always ask.
 - **Command safety.** Commands always ask unless allow-listed. Commands that change Git history or configuration, publish, launch apps, start containers or services, or use `sudo` always ask, with a warning, however the program name is spelled. Commands with redirection, substitution, nested shells, environment prefixes or paths outside the workspace also always ask. The allowlist is read from your user settings only, so a repository cannot add to it.
-- **Checkpoints and rewind.** The workspace is snapshotted into a private Git repository in extension storage (never your repository) before each message. Rewind code, conversation or both from any message. Any change can be opened in VS Code's diff view.
+- **Checkpoints and rewind.** Before the agent first changes a file after each of your messages, the file's previous content is backed up in extension storage. Rewind code, conversation or both from any message: this undoes the agent's file edits (not changes made by shell commands), warns about files you changed after the agent did, and never deletes a file it could not back up. Any change can be opened in VS Code's diff view.
 - **Project memory.** `.owui/memory/MEMORY.md` plus topic files, loaded at the start of each session and kept up to date by the agent with your approval. A root `AGENTS.md` is loaded as project instructions.
 - **Skills.** Folders with a `SKILL.md`, in `.owui/skills/` or `~/.owui-agent/skills/`. The model sees their names and descriptions and loads one when it is relevant. Run **OWUI Agent: Install Example Skill** for a data-visualisation guide with a colour-palette validator.
 - **Context management.** The context size (16k by default, or what you or Open WebUI set) is sent to Ollama as `num_ctx` with every request, so the model always runs with the size the extension plans for. Token usage is tracked per model. Prompts that would not fit are compacted automatically (old tool output first, then a model-written summary), or on demand with `/compact`. Truncation by the server is detected and reported.
@@ -41,7 +41,6 @@ What the extension cannot guarantee:
 
 - VS Code 1.96 or newer.
 - An Open WebUI server you can reach, an API key, and a model that is good at tool calling (see `docs/SETUP.md`).
-- Git, for checkpoints. Without it, rewind only covers files the agent edited.
 - Google Chrome or Microsoft Edge, optionally, for the browser tool.
 
 ## Quick start
@@ -64,7 +63,6 @@ For models served by Ollama, turn on the model's **Usage** capability in Open We
 | `owuiAgent.commands.allowlist` | `[]` | Command prefixes that run without asking, for example `npm test`. User settings only. |
 | `owuiAgent.commands.timeoutSeconds` | `120` | Default command timeout. |
 | `owuiAgent.agent.maxIterations` | `50` | Model turns before the agent pauses and asks to continue. |
-| `owuiAgent.checkpoints.enabled` | `true` | Workspace snapshots for rewind. |
 | `owuiAgent.skills.userDir` | `~/.owui-agent/skills` | Personal skills folder. |
 | `owuiAgent.web.enabled` | `false` | Web search and fetch through Open WebUI. |
 | `owuiAgent.web.autoApproveSearches` | `false` | Send searches without asking; page fetches always ask. |
@@ -83,7 +81,7 @@ For models served by Ollama, turn on the model's **Usage** capability in Open We
 - **Model quality.** Agent quality depends on the model. Small or heavily quantised models lose track of multi-step tasks.
 - **Slow hardware.** On CPU-only machines each step can take minutes; turning off a reasoning model's **Thinking** in the header helps a lot.
 - **Command safety rules are a guardrail, not a sandbox.** The checks recognise common risky commands by their text. Review approvals carefully. Allow-listing a test or build runner (for example `npm test`) lets whatever the project defines as that script run without asking.
-- **Rewind covers the workspace only.** Changes outside it, in ignored folders such as `node_modules`, or to databases and services are not rewound.
+- **Rewind covers the agent's file edits only.** Files that commands create, change or delete (installs, generators, formatters, `rm`), files over 20 MB, and databases or services are not rewound. Use Git for anything you need to get back.
 - **Platforms.** Tested on Windows 11. macOS and Linux are supported by the code and the CI workflow but have not been tested on real machines yet.
 
 ## Development

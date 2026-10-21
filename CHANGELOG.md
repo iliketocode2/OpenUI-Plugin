@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Checkpoints:
+
+- Rewind now uses only the per-file backups of the agent's own edits. The private Git snapshot of the whole workspace is gone, along with the `owuiAgent.checkpoints.enabled` setting and Git as a requirement; old snapshot repositories are deleted on startup. Rewind no longer undoes changes made by shell commands, and no longer runs three Git processes before every message.
+- Rewind and review no longer delete files over 20 MB or non-regular files that the agent touched; they are reported as not backed up and left alone.
+- The rewind dialog marks files that changed after the agent's last edit, so you know your own later changes would be lost.
+- Files that could not be restored are reported instead of being counted as restored.
+
 Speed and context:
 
 - The system prompt and tool list are fixed for the whole session, so Ollama can reuse its prompt cache between steps. The task list now comes back in the `todo_write` result, the permission mode is noted at the start of your message when it changes, and `AGENTS.md`, memory and skills are read once per session (start a new session to pick up edits you make to them).

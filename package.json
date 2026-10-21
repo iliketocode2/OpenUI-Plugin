@@ -263,12 +263,6 @@
           "minimum": 30,
           "description": "How long to wait for the model to start responding. CPU-only servers may need minutes to load a model or read a long prompt."
         },
-        "owuiAgent.checkpoints.enabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Snapshot the workspace before each request in a private git repository inside VS Code's extension storage (never your own repository), so you can rewind. Requires git. When off, only files the agent edits are backed up.",
-          "scope": "application"
-        },
         "owuiAgent.skills.userDir": {
           "type": "string",
           "default": "",
