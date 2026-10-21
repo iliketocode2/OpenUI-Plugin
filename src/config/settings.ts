@@ -65,11 +65,10 @@ export async function updateModelOverride(id: string, patch: Partial<ModelOverri
 
 export async function addAllowlistEntry(entry: string): Promise<void> {
   const c = vscode.workspace.getConfiguration(SECTION);
-  const target = vscode.workspace.workspaceFolders?.length ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-  const inspected = c.inspect<string[]>('commands.allowlist');
-  const current = (target === vscode.ConfigurationTarget.Workspace ? inspected?.workspaceValue : inspected?.globalValue) ?? [];
+  // The allowlist is application-scoped, so only the user's own settings can hold it.
+  const current = c.inspect<string[]>('commands.allowlist')?.globalValue ?? [];
   if (current.includes(entry)) return;
-  await c.update('commands.allowlist', [...current, entry], target);
+  await c.update('commands.allowlist', [...current, entry], vscode.ConfigurationTarget.Global);
 }
 
 export function onSettingsChanged(listener: () => void): vscode.Disposable {

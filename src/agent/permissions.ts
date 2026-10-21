@@ -53,6 +53,13 @@ export function decide({ mode, access, allowlist, autoApproveSearches }: PolicyI
       if (sensitive.length) {
         return { kind: 'ask', request: { kind: 'edit', question: `Apply this change to ${target.display}?`, warnings: ['This file may contain secrets or credentials.'] } };
       }
+      const control = access.paths.find((p) => p.control);
+      if (control) {
+        return {
+          kind: 'ask',
+          request: { kind: 'edit', question: `Apply this change to ${control.display}?`, warnings: ['This is Git or VS Code configuration. Changes here can make Git or the editor run programs, or change what the agent may do without asking.'] },
+        };
+      }
       if (scratchOnly || mode === 'auto' || mode === 'review') return { kind: 'allow' };
       return { kind: 'ask', request: { kind: 'edit', question: `Apply this change to ${target.display}?`, warnings: [] } };
     }
@@ -61,7 +68,7 @@ export function decide({ mode, access, allowlist, autoApproveSearches }: PolicyI
       const warnings = [...a.warnings];
       if (access.cwd.zone === 'outside') warnings.push(`Runs in ${access.cwd.display}, outside the workspace.`);
       if (!warnings.length && access.cwd.zone !== 'outside' && isAllowlisted(access.command, allowlist)) return { kind: 'allow' };
-      if (a.complex) warnings.push('Contains command substitution or unbalanced quotes; review it carefully.');
+      if (a.complex) warnings.push('Contains substitution, grouping, a nested shell or unusual characters that the allowlist cannot check; review it carefully.');
       const request: ApprovalRequest = {
         kind: 'command',
         question: access.background ? 'Start this background process?' : 'Run this command?',

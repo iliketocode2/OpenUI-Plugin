@@ -9,6 +9,8 @@ export interface ResolvedPath {
   root?: string;
   display: string;
   sensitive: boolean;
+  /** Git or VS Code configuration: writing it can make Git or the editor run programs or change the agent's permissions. */
+  control?: boolean;
 }
 
 const SENSITIVE = [
@@ -19,6 +21,11 @@ const SENSITIVE = [
   /(^|[\\/])\.(ssh|aws|gnupg|docker|kube)([\\/]|$)/i,
   /(^|[\\/])(credentials|secrets?)(\.[a-z]+)?$/i,
 ];
+
+const CONTROL = /(^|[\\/])\.(git|vscode)([\\/]|$)/i;
+
+/** Globs (ripgrep syntax) that keep directory-wide searches away from the files SENSITIVE matches. */
+export const SENSITIVE_GLOBS = ['.env', '.env.*', '*.{pem,key,p12,pfx,keystore,jks,kdbx}', 'id_{rsa,dsa,ecdsa,ed25519}', 'id_{rsa,dsa,ecdsa,ed25519}.pub', '.{npmrc,pypirc,netrc,git-credentials}', '.{ssh,aws,gnupg,docker,kube}', '{credentials,secret,secrets}', '{credentials,secret,secrets}.*'];
 
 export function isSensitivePath(p: string): boolean {
   return SENSITIVE.some((re) => re.test(p));
@@ -33,7 +40,10 @@ export class PathGuard {
     platform: NodeJS.Platform = process.platform,
   ) {
     this.caseInsensitive = platform === 'win32' || platform === 'darwin';
+    this.windows = platform === 'win32';
   }
+
+  private readonly windows: boolean;
 
   workspaceRoots(): string[] {
     return this.roots();
@@ -49,20 +59,24 @@ export class PathGuard {
     const expanded = trimmed === '~' || trimmed.startsWith('~/') || trimmed.startsWith('~\\') ? path.join(homeDir(), trimmed.slice(1)) : trimmed;
     const from = base ?? this.primaryRoot() ?? this.scratchpad;
     const absolute = canonical(path.resolve(from, expanded));
+    // NTFS alternate data streams (file.txt::$DATA, file.txt:hidden) bypass name-based checks.
+    if (this.windows && absolute.replace(/^\\\\[?.]\\/, '').slice(2).includes(':')) throw new Error(`Paths with ":" after the drive letter are not supported: ${input}`);
     return this.classify(absolute);
   }
 
   classify(absolute: string): ResolvedPath {
     const real = realOrNearest(absolute);
+    // Check the link target too, so a link named notes.txt that points at .env still counts as sensitive.
+    const flags = { sensitive: isSensitivePath(absolute) || isSensitivePath(real), control: CONTROL.test(absolute) || CONTROL.test(real) };
     for (const root of this.roots()) {
       const r = realOrNearest(root);
-      if (this.within(real, r)) return { absolute, zone: 'workspace', root, display: displayPath(absolute, root), sensitive: isSensitivePath(absolute) };
+      if (this.within(real, r)) return { absolute, zone: 'workspace', root, display: displayPath(absolute, root), ...flags };
     }
     const sp = realOrNearest(this.scratchpad);
     if (this.within(real, sp)) {
-      return { absolute, zone: 'scratchpad', root: this.scratchpad, display: `<scratchpad>/${toSlash(path.relative(this.scratchpad, absolute))}`, sensitive: isSensitivePath(absolute) };
+      return { absolute, zone: 'scratchpad', root: this.scratchpad, display: `<scratchpad>/${toSlash(path.relative(this.scratchpad, absolute))}`, ...flags };
     }
-    return { absolute, zone: 'outside', display: absolute, sensitive: isSensitivePath(absolute) };
+    return { absolute, zone: 'outside', display: absolute, ...flags };
   }
 
   private within(child: string, parent: string): boolean {

@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import * as path from 'node:path';
+import { isSensitivePath } from './paths';
 
 export function globToRegExp(glob: string): RegExp {
   let re = '';
@@ -79,13 +80,14 @@ export async function walkFiles(root: string, opts: { signal?: AbortSignal; limi
 export async function jsGrep(
   root: string,
   pattern: RegExp,
-  opts: { glob?: string; signal?: AbortSignal; maxMatches: number },
+  opts: { glob?: string; signal?: AbortSignal; maxMatches: number; skipSensitive?: boolean },
 ): Promise<{ matches: { file: string; line: number; text: string }[]; truncated: boolean }> {
   const { files } = await walkFiles(root, { limit: 50_000, ...(opts.signal ? { signal: opts.signal } : {}) });
   const matches: { file: string; line: number; text: string }[] = [];
   for (const file of files) {
     if (opts.signal?.aborted) break;
     if (opts.glob && !matchGlob(file, opts.glob)) continue;
+    if (opts.skipSensitive && isSensitivePath(file)) continue;
     const abs = path.join(root, file);
     try {
       if ((await stat(abs)).size > 2_000_000) continue;

@@ -19,6 +19,15 @@ describe('permission policy', () => {
     expect(decide({ mode: 'auto', allowlist: [], access: { kind: 'write', paths: [p('workspace')] } }).kind).toBe('allow');
   });
 
+  it('always asks before changing Git or VS Code configuration, even in auto mode', () => {
+    for (const mode of ['auto', 'review'] as const) {
+      const d = decide({ mode, allowlist: [], access: { kind: 'write', paths: [{ ...p('workspace', '.vscode/settings.json'), control: true }] } });
+      expect(d.kind).toBe('ask');
+      expect(d.kind === 'ask' && d.request.warnings.join(' ')).toMatch(/run programs/);
+    }
+    expect(decide({ mode: 'ask', allowlist: [], access: { kind: 'read', paths: [{ ...p('workspace', '.git/config'), control: true }] } }).kind).toBe('allow');
+  });
+
   it('allows scratchpad writes in every mode', () => {
     expect(decide({ mode: 'ask', allowlist: [], access: { kind: 'write', paths: [p('scratchpad')] } }).kind).toBe('allow');
   });

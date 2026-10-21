@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { jsGrep, matchGlob, walkFiles } from '../../workspace/glob';
+import { SENSITIVE_GLOBS } from '../../workspace/paths';
 import { runRipgrep } from '../../workspace/ripgrep';
 import { fail, ok, type Tool } from '../types';
 
@@ -103,9 +104,12 @@ export const grepTool: Tool<GrepArgs> = {
           if (args.ignore_case) rgArgs.push('--ignore-case');
           if (args.context && output === 'content') rgArgs.push('--context', String(args.context));
           if (args.glob) rgArgs.push('--glob', args.glob);
+          // Later globs win, so these exclusions hold even when the model's glob names a secrets file.
+          if (!isFile) for (const g of SENSITIVE_GLOBS) rgArgs.push('--glob', `!${g}`);
           rgArgs.push('--regexp', args.pattern);
           if (isFile) rgArgs.push(path.basename(target.absolute));
           const r = await runRipgrep(ctx.ripgrep, rgArgs, cwd, ctx.signal);
+          if (r.code === 2 && !r.stdout && /No files were searched/i.test(r.stderr)) return ok('No matches.');
           if (r.code === 2 && !r.stdout) return fail(`grep failed: ${r.stderr.trim()}`);
           const lines = r.stdout.split(/\r?\n/).filter(Boolean).map((l) => l.replace(/\\/g, '/'));
           const shown = lines.slice(0, max);
@@ -119,7 +123,12 @@ export const grepTool: Tool<GrepArgs> = {
         } catch (e) {
           return fail(`Invalid regular expression: ${(e as Error).message}`);
         }
-        const { matches, truncated } = await jsGrep(cwd, re, { maxMatches: max, signal: ctx.signal, ...(args.glob ? { glob: args.glob } : isFile ? { glob: path.basename(target.absolute) } : {}) });
+        const { matches, truncated } = await jsGrep(cwd, re, {
+          maxMatches: max,
+          signal: ctx.signal,
+          skipSensitive: !isFile,
+          ...(args.glob ? { glob: args.glob } : isFile ? { glob: path.basename(target.absolute) } : {}),
+        });
         ctx.update({ title: `Search ${JSON.stringify(args.pattern)} — ${matches.length}${truncated ? '+' : ''} results` });
         if (!matches.length) return ok('No matches.');
         if (output === 'files') return ok([...new Set(matches.map((m) => m.file))].join('\n'));

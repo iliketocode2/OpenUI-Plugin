@@ -59,6 +59,29 @@ describe('PathGuard', () => {
     expect(guard.resolve('link/file.txt').zone).toBe('outside');
   });
 
+  it.runIf(process.platform === 'win32')('rejects NTFS alternate data streams', () => {
+    expect(() => guard.resolve('.env::$DATA')).toThrow(/":"/);
+    expect(() => guard.resolve('notes.txt:hidden')).toThrow(/":"/);
+    expect(guard.resolve(path.join(ws, 'src', 'a.ts')).zone).toBe('workspace');
+    expect(guard.resolve(`\\\\?\\${path.join(ws, 'src', 'a.ts')}`).zone).toBe('workspace');
+  });
+
+  it('marks Git and VS Code configuration as control paths', () => {
+    for (const f of ['.git/config', '.git/hooks/pre-commit', '.vscode/settings.json', 'sub/.git/config']) expect(guard.resolve(f).control, f).toBe(true);
+    for (const f of ['.gitignore', '.github/workflows/ci.yml', 'src/a.ts', 'docs/.vscodeignore']) expect(guard.resolve(f).control, f).toBe(false);
+  });
+
+  it('treats a link to a sensitive file as sensitive', async () => {
+    await writeFile(path.join(ws, '.env'), 'SECRET=1');
+    const link = path.join(ws, 'notes.txt');
+    try {
+      await symlink(path.join(ws, '.env'), link, 'file');
+    } catch {
+      return; // creating file symlinks needs Developer Mode or admin rights on Windows
+    }
+    expect(guard.resolve('notes.txt').sensitive).toBe(true);
+  });
+
   it('flags sensitive files', () => {
     for (const f of ['.env', '.env.local', 'config/.env.production', 'id_rsa', 'cert.pem', 'server.key', '.npmrc', 'home/.ssh/config', 'credentials']) {
       expect(isSensitivePath(f), f).toBe(true);

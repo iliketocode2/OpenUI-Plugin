@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { listDirTool, readFileTool } from '../../src/tools/fs/read';
@@ -92,6 +92,22 @@ describe('edit_file', () => {
     expect(r.content).toContain('2\t  return 1;');
   });
 
+  it('never quotes files that need approval to read, because prepare runs before approval', async () => {
+    const outside = path.join(env.scratchpad, '..', `owui-outside-${Date.now()}.txt`);
+    await writeFile(outside, 'TOP-SECRET-OUTSIDE\n');
+    await writeFile(path.join(env.workspace, '.env'), 'API_KEY=SECRET-DOTENV\nAPI_KEY=SECRET-DOTENV\n');
+    try {
+      for (const [p, old] of [[outside, 'zzzz'], ['.env', 'zzzz'], ['.env', 'API_KEY=SECRET-DOTENV']] as const) {
+        const r = await editFileTool.prepare({ path: p, old_string: old, new_string: 'x' }, env.ctx);
+        expect('content' in r && r.isError, p).toBe(true);
+        expect('content' in r && r.content, p).not.toMatch(/SECRET/);
+        expect('content' in r && r.content, p).toMatch(/read_file/);
+      }
+    } finally {
+      await rm(outside, { force: true });
+    }
+  });
+
   it('refuses ambiguous matches unless replace_all is set', async () => {
     await writeFile(file(), 'x();\nx();\n');
     const r = await env.run(editFileTool, { path: 'e.ts', old_string: 'x();', new_string: 'y();' });
@@ -152,6 +168,15 @@ describe.each([
     const files = await env.run(grepTool, { pattern: 'needle', output: 'files', ignore_case: true });
     expect(files.content.split('\n').sort()).toEqual(['src/a.ts', 'src/c.md', 'src/deep dir/b.ts']);
     expect((await env.run(grepTool, { pattern: 'zzz-nothing' })).content).toBe('No matches.');
+  });
+
+  it.runIf(label === 'JS fallback' || !!rg)('keeps directory-wide searches out of secrets files, even when the glob names them', async () => {
+    await writeFile(path.join(env.workspace, '.gitignore'), 'node_modules\n.env\n');
+    await writeFile(path.join(env.workspace, '.env'), 'API_KEY=SECRET\n');
+    await writeFile(path.join(env.workspace, 'src', 'server.key'), 'SECRET\n');
+    for (const args of [{ pattern: 'SECRET' }, { pattern: 'SECRET', glob: '.env' }, { pattern: 'SECRET', glob: '*.key' }]) {
+      expect((await env.run(grepTool, args)).content, JSON.stringify(args)).toBe('No matches.');
+    }
   });
 });
 

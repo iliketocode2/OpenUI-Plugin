@@ -12,7 +12,8 @@ export function commandEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proces
     PAGER: 'cat',
     GCM_INTERACTIVE: 'never',
     NO_UPDATE_NOTIFIER: '1',
-    npm_config_yes: 'true',
+    // npm assumes --yes when stdin is not a terminal, which would let npx download and run packages without asking.
+    npm_config_yes: 'false',
     PYTHONUNBUFFERED: '1',
     PYTHONIOENCODING: 'utf-8',
     FORCE_COLOR: '0',

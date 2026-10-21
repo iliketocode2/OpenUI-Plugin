@@ -188,7 +188,8 @@
                 "type": "boolean"
               }
             }
-          }
+          },
+          "scope": "application"
         },
         "owuiAgent.request.stallTimeoutSeconds": {
           "type": "integer",
@@ -212,7 +213,8 @@
             "cmd"
           ],
           "default": "auto",
-          "markdownDescription": "Shell for agent commands on Windows. `auto` uses Git Bash when installed, otherwise PowerShell."
+          "markdownDescription": "Shell for agent commands on Windows. `auto` uses Git Bash when installed, otherwise PowerShell.",
+          "scope": "application"
         },
         "owuiAgent.shell.posix": {
           "type": "string",
@@ -223,7 +225,8 @@
             "sh"
           ],
           "default": "auto",
-          "description": "Shell for agent commands on macOS and Linux. auto prefers bash."
+          "description": "Shell for agent commands on macOS and Linux. auto prefers bash.",
+          "scope": "application"
         },
         "owuiAgent.commands.timeoutSeconds": {
           "type": "integer",
@@ -238,7 +241,8 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Commands that run without asking, matched as word prefixes (e.g. `npm test`, `git status`, `npx tsc`). Commands that change Git history, publish, launch applications, start services or use sudo always ask. Use `*` as a wildcard word."
+          "markdownDescription": "Commands that run without asking, matched as word prefixes (e.g. `npm test`, `git status`, `npx tsc`). Commands that change Git history or configuration, publish, launch applications, start services or use sudo always ask, and so do commands with redirection, substitution, env prefixes or paths outside the workspace. Use `*` as a wildcard for any word after the first. Read from your user settings only; a workspace cannot add entries. Allowing a test or build runner lets anything the project defines as that script run without asking.",
+          "scope": "application"
         },
         "owuiAgent.agent.maxIterations": {
           "type": "integer",
@@ -262,22 +266,26 @@
         "owuiAgent.checkpoints.enabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Snapshot the workspace before each request in a private git repository inside VS Code's extension storage (never your own repository), so you can rewind. Requires git. When off, only files the agent edits are backed up."
+          "markdownDescription": "Snapshot the workspace before each request in a private git repository inside VS Code's extension storage (never your own repository), so you can rewind. Requires git. When off, only files the agent edits are backed up.",
+          "scope": "application"
         },
         "owuiAgent.skills.userDir": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Folder with your personal skills (each skill is a sub-folder with a `SKILL.md`). Defaults to `~/.owui-agent/skills`. Workspace skills live in `.owui/skills`."
+          "markdownDescription": "Folder with your personal skills (each skill is a sub-folder with a `SKILL.md`). Defaults to `~/.owui-agent/skills`. Workspace skills live in `.owui/skills`.",
+          "scope": "application"
         },
         "owuiAgent.web.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Give the agent `web_search` and `web_fetch`. They run on your Open WebUI server (configure a self-hosted SearXNG there); this extension never contacts the internet itself. Every query and URL is shown for approval first."
+          "markdownDescription": "Give the agent `web_search` and `web_fetch`. They run on your Open WebUI server (configure a self-hosted SearXNG there); this extension never contacts the internet itself. Every query and URL is shown for approval first.",
+          "scope": "application"
         },
         "owuiAgent.web.autoApproveSearches": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Send web searches without asking. Page fetches always ask. Queries leave your infrastructure, so leave this off unless you trust the model not to include private details."
+          "markdownDescription": "Send web searches without asking. Page fetches always ask. Queries leave your infrastructure, so leave this off unless you trust the model not to include private details.",
+          "scope": "application"
         },
         "owuiAgent.web.confirmedEngine": {
           "type": "string",
@@ -287,12 +295,14 @@
             "searxng",
             "other"
           ],
-          "markdownDescription": "If your API key cannot read Open WebUI's web search configuration (it needs admin rights), state the engine here so the sovereignty indicator can show it. `searxng` means a self-hosted SearXNG."
+          "markdownDescription": "If your API key cannot read Open WebUI's web search configuration (it needs admin rights), state the engine here so the sovereignty indicator can show it. `searxng` means a self-hosted SearXNG.",
+          "scope": "application"
         },
         "owuiAgent.browser.enabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Give the agent a headless browser for local development servers (localhost only), using your installed Chrome or Edge with a fresh temporary profile. No browser is ever downloaded."
+          "markdownDescription": "Give the agent a headless browser for local development servers (localhost only), using your installed Chrome or Edge with a fresh temporary profile. No browser is ever downloaded.",
+          "scope": "application"
         },
         "owuiAgent.browser.channel": {
           "type": "string",
@@ -302,12 +312,14 @@
             "msedge"
           ],
           "default": "auto",
-          "description": "Which installed browser to use. auto tries Chrome, then Edge."
+          "description": "Which installed browser to use. auto tries Chrome, then Edge.",
+          "scope": "application"
         },
         "owuiAgent.browser.allowExternalRequests": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "**Not recommended.** Let pages opened by the browser tool load resources from the internet (fonts, CDNs, APIs). When off, every non-local request is blocked, including the browser's own background traffic to Google or Microsoft."
+          "markdownDescription": "**Not recommended.** Let pages opened by the browser tool load resources from the internet (fonts, CDNs, APIs). When off, every non-local request is blocked, including the browser's own background traffic to Google or Microsoft.",
+          "scope": "application"
         },
         "owuiAgent.browser.extraHosts": {
           "type": "array",
@@ -315,7 +327,8 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Extra host names the browser tool may open besides localhost, e.g. a dev server on your LAN (`dev.box.lan`)."
+          "markdownDescription": "Extra host names the browser tool may open besides localhost, e.g. a dev server on your LAN (`dev.box.lan`).",
+          "scope": "application"
         }
       }
     }

@@ -7,14 +7,14 @@ Full installation and server setup: see `docs/SETUP.md` in the source repository
 ## Data sovereignty
 
 - **One destination.** The extension's network traffic goes only to the Open WebUI URL you configure. All requests pass through a single module that refuses any other origin and any redirect away from it. There is no telemetry, analytics, crash reporting, update check, CDN or font download.
-- **Local storage.** History, checkpoints, file backups, memory and logs stay on your machine (VS Code storage and your workspace). The API key is kept in the OS keychain via VS Code SecretStorage.
-- **Local browser only.** The browser tool opens `localhost` pages in your installed Chrome or Edge with a throwaway profile. Every request to another host is blocked, including the browser's own background traffic to Google or Microsoft.
+- **Local storage.** History, checkpoints, file backups and memory stay on your machine (VS Code storage and your workspace). The API key is kept in the OS keychain via VS Code SecretStorage.
+- **Local browser only.** The browser tool opens `localhost` pages in your installed Chrome or Edge with a throwaway profile. Every HTTP and WebSocket request to another host is blocked, including the browser's own background traffic to Google or Microsoft. WebRTC (UDP) traffic from a page is not blocked yet.
 - **Web access is opt-in and goes through your server.** Web search and page fetches are off by default. When enabled they run on your Open WebUI server (ideally backed by a self-hosted SearXNG), and you approve or edit every query and URL first.
 
 What the extension cannot guarantee:
 
 - **The model's location.** It cannot tell whether a model in Open WebUI runs locally or is proxied to a cloud provider. Mark models that run on your own hardware as *local*; the header shows **Local** or **Unverified** accordingly.
-- **Commands you approve.** Commands run in your shell (for example `npm install` or `git push`) can reach the internet like any program you run.
+- **Commands the agent runs.** Commands you approve, and allow-listed commands that run without asking, execute in your shell with your privileges and can reach the internet like any program you run (for example `npm install` or `git push`).
 
 ## Features
 
@@ -26,7 +26,9 @@ What the extension cannot guarantee:
   - **Ask before edits** (default): each change is shown as a diff to Apply or Deny.
   - **Auto-accept edits:** workspace changes apply immediately.
   - **Auto-accept, review at end:** changes apply immediately, then you keep or revert each file.
-- **Command safety.** Commands always ask unless allow-listed. Git commits and pushes, publishing, launching apps, containers, services and `sudo` always ask, with a warning.
+
+  Use the auto-accept modes only on repositories you trust. File changes apply without asking and allow-listed commands run with your privileges, and instructions hidden in files, command output or web pages can steer the model. Changes to `.git/` and `.vscode/` always ask.
+- **Command safety.** Commands always ask unless allow-listed. Commands that change Git history or configuration, publish, launch apps, start containers or services, or use `sudo` always ask, with a warning, however the program name is spelled. Commands with redirection, substitution, nested shells, environment prefixes or paths outside the workspace also always ask. The allowlist is read from your user settings only, so a repository cannot add to it.
 - **Checkpoints and rewind.** The workspace is snapshotted into a private Git repository in extension storage (never your repository) before each message. Rewind code, conversation or both from any message. Any change can be opened in VS Code's diff view.
 - **Project memory.** `.owui/memory/MEMORY.md` plus topic files, loaded at the start of each message and kept up to date by the agent with your approval. A root `AGENTS.md` is loaded as project instructions.
 - **Skills.** Folders with a `SKILL.md`, in `.owui/skills/` or `~/.owui-agent/skills/`. The model sees their names and descriptions and loads one when it is relevant. Run **OWUI Agent: Install Example Skill** for a data-visualisation guide with a colour-palette validator.
@@ -58,7 +60,7 @@ For models served by Ollama, set the model's context length to at least 16k toke
 | `owuiAgent.defaultModel` | | Model selected by default. |
 | `owuiAgent.models` | `{}` | Per model: `toolMode` (`auto`, `native`, `text`), `contextSize` (also sent to Ollama as `num_ctx`), `vision`, `local`, `thinking`. |
 | `owuiAgent.shell.windows` / `.posix` | `auto` | Shell for commands. On Windows, `auto` uses Git Bash when installed, otherwise PowerShell. |
-| `owuiAgent.commands.allowlist` | `[]` | Command prefixes that run without asking, for example `npm test`. |
+| `owuiAgent.commands.allowlist` | `[]` | Command prefixes that run without asking, for example `npm test`. User settings only. |
 | `owuiAgent.commands.timeoutSeconds` | `120` | Default command timeout. |
 | `owuiAgent.agent.maxIterations` | `50` | Model turns before the agent pauses and asks to continue. |
 | `owuiAgent.checkpoints.enabled` | `true` | Workspace snapshots for rewind. |
@@ -79,7 +81,7 @@ For models served by Ollama, set the model's context length to at least 16k toke
 
 - **Model quality.** Agent quality depends on the model. Small or heavily quantised models lose track of multi-step tasks.
 - **Slow hardware.** On CPU-only machines each step can take minutes; turning off a reasoning model's **Thinking** in the header helps a lot.
-- **Command safety rules are a guardrail, not a sandbox.** The checks recognise common risky commands by their text. Review approvals carefully.
+- **Command safety rules are a guardrail, not a sandbox.** The checks recognise common risky commands by their text. Review approvals carefully. Allow-listing a test or build runner (for example `npm test`) lets whatever the project defines as that script run without asking.
 - **Rewind covers the workspace only.** Changes outside it, in ignored folders such as `node_modules`, or to databases and services are not rewound.
 - **Platforms.** Tested on Windows 11. macOS and Linux are supported by the code and the CI workflow but have not been tested on real machines yet.
 

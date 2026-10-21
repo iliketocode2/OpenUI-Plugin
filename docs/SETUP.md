@@ -63,7 +63,7 @@ On CPU-only machines a 27B model may generate only a few tokens per second, so a
 ## 4. Permissions and safety
 
 - **Modes** (bottom of the chat panel): *Plan* (read-only, produces a plan for approval), *Ask before edits* (default), *Auto-accept edits*, *Auto-accept, review at end*.
-- Commands always ask unless they match `owuiAgent.commands.allowlist`. Commands that change Git history, publish packages, open desktop apps, start containers or services, or use `sudo` always ask.
+- Commands always ask unless they match `owuiAgent.commands.allowlist` (read from your user settings only). Commands that change Git history or configuration, publish packages, open desktop apps, start containers or services, or use `sudo` always ask, and so do commands with redirection, substitution, nested shells, environment prefixes or paths outside the workspace.
 - Before each message the workspace is snapshotted into a private Git repository in VS Code's extension storage (never your repository), so you can **Rewind** from any of your messages.
 - The agent's commands run on your machine and *can* reach the internet (for example `npm install`); the extension's own traffic goes only to Open WebUI (and, for the browser tool, to `localhost`).
 

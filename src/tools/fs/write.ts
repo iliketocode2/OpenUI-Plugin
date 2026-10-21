@@ -142,15 +142,17 @@ export const editFileTool: Tool<EditArgs> = {
       newStr = toCrlf(newStr);
       hits = findAll(before, oldStr);
     }
+    // These errors reach the model before any approval, so they may only quote files it could read without asking.
+    const quote = (text: string) => (target.zone !== 'outside' && !target.sensitive ? text : '\nRead the file with read_file (this needs the user\'s approval) and retry.');
     if (!hits.length) {
       return fail(
-        `old_string was not found in ${target.display}. It must match exactly, including whitespace. Current content:\n${excerpt(before, closestLines(before, args.old_string))}`,
+        `old_string was not found in ${target.display}. It must match exactly, including whitespace.${quote(` Current content:\n${excerpt(before, closestLines(before, args.old_string))}`)}`,
       );
     }
     if (hits.length > 1 && !args.replace_all) {
       const lineNos = hits.map((h) => lineOf(before, h));
       return fail(
-        `old_string occurs ${hits.length} times in ${target.display} (lines ${lineNos.join(', ')}). Add surrounding lines to make it unique, or set replace_all to true.\n${excerpt(before, lineNos, 3)}`,
+        `old_string occurs ${hits.length} times in ${target.display} (lines ${lineNos.join(', ')}). Add surrounding lines to make it unique, or set replace_all to true.${quote(`\n${excerpt(before, lineNos, 3)}`)}`,
       );
     }
     const after = args.replace_all ? before.split(oldStr).join(newStr) : before.slice(0, hits[0]!) + newStr + before.slice(hits[0]! + oldStr.length);
