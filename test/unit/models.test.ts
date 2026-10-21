@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ASSUMED_CONTEXT, parseModelList, resolveModel } from '../../src/owui/models';
+import { DEFAULT_CONTEXT, parseModelList, resolveModel } from '../../src/owui/models';
 import { loadFixture } from '../mock-owui/server';
 
 describe('parseModelList', () => {
@@ -29,7 +29,7 @@ describe('parseModelList', () => {
     const [m] = parseModelList({ data: [{ id: 'qwen3.5:9b', info: { params: {} }, ollama: { details: { context_length: 262144 } } }] });
     expect(m).toMatchObject({ id: 'qwen3.5:9b', maxContext: 262144 });
     expect(m!.contextSize).toBeUndefined();
-    expect(resolveModel(m!, undefined)).toMatchObject({ contextSize: ASSUMED_CONTEXT, contextSource: 'assumed', maxContext: 262144 });
+    expect(resolveModel(m!, undefined)).toMatchObject({ contextSize: DEFAULT_CONTEXT, contextSource: 'default', maxContext: 262144 });
     expect(resolveModel(m!, { contextSize: 16384 })).toMatchObject({ contextSize: 16384, contextSource: 'setting', maxContext: 262144 });
   });
 
@@ -39,8 +39,10 @@ describe('parseModelList', () => {
 });
 
 describe('resolveModel', () => {
-  it('prefers the user setting, then the server, then the assumption', () => {
-    expect(resolveModel({ id: 'm', name: 'm' }, undefined)).toMatchObject({ contextSize: ASSUMED_CONTEXT, contextSource: 'assumed', toolMode: 'auto', local: false });
+  it('prefers the user setting, then the server, then a 16k default capped at the model maximum', () => {
+    expect(DEFAULT_CONTEXT).toBe(16384);
+    expect(resolveModel({ id: 'm', name: 'm' }, undefined)).toMatchObject({ contextSize: 16384, contextSource: 'default', toolMode: 'auto', local: false });
+    expect(resolveModel({ id: 'm', name: 'm', maxContext: 8192 }, undefined)).toMatchObject({ contextSize: 8192, contextSource: 'default' });
     expect(resolveModel({ id: 'm', name: 'm', contextSize: 16384 }, undefined)).toMatchObject({ contextSize: 16384, contextSource: 'server' });
     expect(resolveModel({ id: 'm', name: 'm', contextSize: 16384 }, { contextSize: 8192, local: true, toolMode: 'text' })).toMatchObject({
       contextSize: 8192,

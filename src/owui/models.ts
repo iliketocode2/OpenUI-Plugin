@@ -18,7 +18,7 @@ export interface ModelOverride {
   thinking?: boolean;
 }
 
-export type ContextSource = 'setting' | 'server' | 'assumed';
+export type ContextSource = 'setting' | 'server' | 'default';
 
 export interface ResolvedModel {
   id: string;
@@ -33,7 +33,9 @@ export interface ResolvedModel {
   maxContext?: number;
 }
 
-export const ASSUMED_CONTEXT = 4096;
+/** Used when neither the settings nor Open WebUI give a size. It is sent to Ollama as num_ctx, so it is what the model
+ * really runs with, not a guess. 16k holds the agent's instructions and tools plus a useful amount of conversation. */
+export const DEFAULT_CONTEXT = 16384;
 
 type Json = Record<string, unknown>;
 
@@ -73,8 +75,8 @@ export function parseModelList(body: unknown): ServerModel[] {
 }
 
 export function resolveModel(server: ServerModel, override: ModelOverride | undefined): ResolvedModel {
-  let contextSize = ASSUMED_CONTEXT;
-  let contextSource: ContextSource = 'assumed';
+  let contextSize = Math.min(DEFAULT_CONTEXT, server.maxContext ?? DEFAULT_CONTEXT);
+  let contextSource: ContextSource = 'default';
   if (override?.contextSize) {
     contextSize = override.contextSize;
     contextSource = 'setting';

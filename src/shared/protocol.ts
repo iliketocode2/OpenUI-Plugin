@@ -11,14 +11,14 @@ export interface ModelView {
   vision: boolean;
   thinking: boolean;
   contextSize: number;
-  contextSource: 'setting' | 'server' | 'assumed';
+  contextSource: 'setting' | 'server' | 'default';
   maxContext?: number;
 }
 
 export interface UsageView {
   promptTokens: number;
   contextSize: number;
-  contextSource: 'setting' | 'server' | 'assumed';
+  contextSource: 'setting' | 'server' | 'default';
   estimated: boolean;
 }
 
@@ -84,7 +84,6 @@ export type TranscriptItem =
     }
   | ({ id: string; kind: 'tool'; ts: number; tool: string; title: string; status: ToolStatus; approval?: ApprovalRequest } & ToolCardUpdate)
   | { id: string; kind: 'question'; ts: number; questions: AskUserQuestion[]; answers?: string[][]; status: 'open' | 'answered' | 'cancelled' }
-  | { id: string; kind: 'plan'; ts: number; plan: string; status: 'open' | 'approved' | 'revise' | 'cancelled'; approvedMode?: AgentMode; feedback?: string }
   | { id: string; kind: 'review'; ts: number; checkpoint: string; files: ReviewFile[]; status: 'open' | 'done' }
   | { id: string; kind: 'error'; text: string; ts: number; action?: 'setApiKey' | 'openSettings' | 'retry' | 'continue' | 'setContextSize' }
   | { id: string; kind: 'warning'; text: string; ts: number }
@@ -97,8 +96,6 @@ export interface ReviewFile {
   decision?: 'kept' | 'reverted';
   diffId?: string;
 }
-
-export type PlanAnswer = { approved: true; mode: Exclude<AgentMode, 'plan'> } | { approved: false; feedback: string };
 
 export interface ConnectionView {
   baseUrl: string;
@@ -163,7 +160,6 @@ export type FromWebview =
   | { type: 'answer'; id: string; answers: string[][] }
   | { type: 'openFile'; path: string }
   | { type: 'openDiff'; diffId: string }
-  | { type: 'planDecision'; id: string; answer: PlanAnswer }
   | { type: 'rewind'; itemId: string; scope: RewindScope }
   | { type: 'review'; id: string; absolute?: string; decision: 'keep' | 'revert' }
   | { type: 'openLink'; href: string }

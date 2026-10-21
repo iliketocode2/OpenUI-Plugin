@@ -154,9 +154,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       case 'openDiff':
         await openDiff(this.controller.diffs, m.diffId);
         return;
-      case 'planDecision':
-        this.controller.planDecision(m.id, m.answer);
-        return;
       case 'review':
         await this.controller.review(m.id, m.absolute, m.decision);
         return;

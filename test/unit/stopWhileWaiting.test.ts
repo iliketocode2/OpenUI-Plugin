@@ -20,7 +20,7 @@ afterEach(async () => {
 
 const call = (name: string, args: object) => ({ kind: 'sse' as const, chunks: sseChunks({ content: '', toolCalls: [{ name, arguments: args }] }) });
 
-async function stopWhile(kind: TranscriptItem['kind'], isWaiting: (t: TranscriptItem) => boolean, mode: 'ask' | 'plan', reply: ReturnType<typeof call>) {
+async function stopWhile(kind: TranscriptItem['kind'], isWaiting: (t: TranscriptItem) => boolean, mode: 'ask', reply: ReturnType<typeof call>) {
   h = await createHarness({ baseUrl: mock.baseUrl, apiKey: KEY, mode, approve: () => undefined });
   mock.enqueue(reply);
   const run = h.session.send('go', h.ctx);
@@ -41,10 +41,5 @@ describe('Stop while the agent waits for the user', () => {
   it('ends an open question as cancelled', async () => {
     const q = await stopWhile('question', (t) => t.kind === 'question' && t.status === 'open', 'ask', call('ask_user', { questions: [{ question: 'Which?' }] }));
     expect(q).toMatchObject({ status: 'cancelled' });
-  });
-
-  it('ends an open plan as cancelled', async () => {
-    const p = await stopWhile('plan', (t) => t.kind === 'plan' && t.status === 'open', 'plan', call('exit_plan_mode', { plan: '# Plan' }));
-    expect(p).toMatchObject({ status: 'cancelled' });
   });
 });

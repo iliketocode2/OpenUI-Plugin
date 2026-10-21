@@ -798,7 +798,6 @@ body.vscode-high-contrast .question {
   margin: 2px 0 4px;
 }
 
-.plan,
 .review {
   margin: 4px 10px;
   padding: 8px 10px;
@@ -806,32 +805,15 @@ body.vscode-high-contrast .question {
   border-radius: 4px;
 }
 
-.plan-approved,
-.plan-revise,
-.plan-cancelled {
-  border-color: var(--vscode-widget-border, transparent);
-}
-
-.plan-head {
+.review-head {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
 }
 
-.plan-title {
+.review-title {
   font-weight: 600;
-}
-
-.plan-body {
-  max-height: 50vh;
-  overflow-y: auto;
-  margin-bottom: 8px;
-}
-
-.plan-feedback {
-  color: var(--vscode-descriptionForeground);
-  font-style: italic;
 }
 
 .review-files {
@@ -879,7 +861,6 @@ body.vscode-high-contrast .question {
   flex: none;
 }
 
-body.vscode-high-contrast .plan,
 body.vscode-high-contrast .review {
   border-color: var(--vscode-contrastBorder);
 }
@@ -1010,6 +991,3 @@ button.context:hover:not(:disabled) {
   border-color: var(--vscode-focusBorder);
 }
 
-.context-assumed .context-label {
-  color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow));
-}

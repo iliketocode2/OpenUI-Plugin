@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { listDirTool, readFileTool } from '../../src/tools/fs/read';
+import { readFileTool } from '../../src/tools/fs/read';
 import { globTool, grepTool } from '../../src/tools/fs/search';
 import { editFileTool, writeFileTool } from '../../src/tools/fs/write';
 import { todoWriteTool, viewImageTool, askUserTool } from '../../src/tools/interactive';
@@ -41,12 +41,12 @@ describe('read_file', () => {
   });
 });
 
-describe('list_dir', () => {
+describe('read_file on a directory', () => {
   it('lists directories first with a trailing slash', async () => {
     await mkdir(path.join(env.workspace, 'src'));
     await writeFile(path.join(env.workspace, 'b.txt'), '');
     await writeFile(path.join(env.workspace, 'a.txt'), '');
-    expect((await env.run(listDirTool, {})).content).toBe('src/\na.txt\nb.txt');
+    expect((await env.run(readFileTool, { path: '.' })).content).toBe('src/\na.txt\nb.txt');
   });
 });
 

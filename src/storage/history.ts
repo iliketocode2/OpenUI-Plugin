@@ -22,7 +22,6 @@ export interface SessionRecord {
   transcript: TranscriptItem[];
   wire: WireMessage[];
   todos: TodoItem[];
-  approvedPlan?: string;
   checkpoints: SerializedCheckpoint[];
   scratchpad?: string;
   turns?: [string, { wire: number; transcript: number }][];
@@ -74,8 +73,6 @@ function searchableText(r: SessionRecord): string {
           return t.text;
         case 'tool':
           return `${t.title} ${t.input ?? ''}`;
-        case 'plan':
-          return t.plan;
         default:
           return '';
       }
@@ -114,7 +111,8 @@ export class HistoryStore {
   async load(id: string): Promise<SessionRecord | undefined> {
     try {
       const r = JSON.parse(await readFile(this.file(id), 'utf8')) as SessionRecord;
-      return r.version === 1 ? r : undefined;
+      if (r.version !== 1) return undefined;
+      return { ...r, transcript: r.transcript.map(fromLegacyItem) };
     } catch {
       return undefined;
     }
@@ -229,9 +227,6 @@ export function toMarkdown(r: SessionRecord): string {
         if (t.output) out.push(`${fence(t.output)}\n${t.output}\n${fence(t.output)}`, '');
         break;
       }
-      case 'plan':
-        out.push(`## Plan (${t.status})`, '', t.plan, '');
-        break;
       case 'question':
         out.push('**Questions:**', ...t.questions.map((q, i) => `- ${q.question} → ${(t.answers?.[i] ?? []).join(', ') || '(no answer)'}`), '');
         break;
@@ -246,4 +241,11 @@ export function toMarkdown(r: SessionRecord): string {
     }
   }
   return `${out.join('\n').trim()}\n`;
+}
+
+/** Sessions saved before plan review was removed contain 'plan' items; show those plans as ordinary replies. */
+function fromLegacyItem(t: TranscriptItem): TranscriptItem {
+  const legacy = t as unknown as { kind: string; id: string; ts: number; plan?: string };
+  if (legacy.kind !== 'plan') return t;
+  return { id: legacy.id, kind: 'assistant', ts: legacy.ts, text: legacy.plan ?? '', reasoning: '', streaming: false };
 }

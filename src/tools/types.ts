@@ -1,4 +1,4 @@
-import type { AskUserQuestion, PlanAnswer, ToolCardUpdate, TodoItem } from '../shared/protocol';
+import type { AskUserQuestion, ToolCardUpdate, TodoItem } from '../shared/protocol';
 import type { BrowserSession } from '../browser/session';
 import type { OwuiWeb } from '../owui/web';
 import type { Skill } from '../skills/discovery';
@@ -54,14 +54,11 @@ export interface ToolContext {
   ask(questions: AskUserQuestion[]): Promise<string[][]>;
   setTodos(todos: TodoItem[]): void;
   beforeWrite(absolute: string): Promise<void>;
-  presentPlan(plan: string): Promise<PlanDecision>;
   skills: Skill[];
   workspaceDirCreated(dir: string): void;
   browser(): BrowserSession;
   web: OwuiWeb;
 }
-
-export type PlanDecision = PlanAnswer;
 
 export type Access =
   | { kind: 'none' }

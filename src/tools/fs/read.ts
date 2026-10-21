@@ -1,9 +1,10 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import * as path from 'node:path';
-import { fail, ok, type Tool } from '../types';
+import { fail, ok, type Tool, type ToolContext, type ToolResult } from '../types';
 
 const DEFAULT_LIMIT = 2000;
 const MAX_LINE = 2000;
+const MAX_ENTRIES = 500;
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico)$/i;
 
 interface ReadArgs {
@@ -15,14 +16,13 @@ interface ReadArgs {
 export const readFileTool: Tool<ReadArgs> = {
   name: 'read_file',
   category: 'read',
-  description:
-    'Read a text file. Returns lines prefixed with line numbers ("  12\\t…"). Use offset/limit for large files. Use view_image for images.',
+  description: 'Read a text file as numbered lines; use offset/limit for large files. On a directory, lists its entries (directories end with "/").',
   parameters: {
     type: 'object',
     properties: {
-      path: { type: 'string', description: 'File path, relative to the workspace root or absolute.' },
-      offset: { type: 'integer', minimum: 1, description: 'First line to read (1-based).' },
-      limit: { type: 'integer', minimum: 1, description: `Number of lines to read (default ${DEFAULT_LIMIT}).` },
+      path: { type: 'string', description: 'Relative to the workspace root, or absolute.' },
+      offset: { type: 'integer', minimum: 1, description: 'First line (1-based).' },
+      limit: { type: 'integer', minimum: 1, description: `Lines to read (default ${DEFAULT_LIMIT}).` },
     },
     required: ['path'],
   },
@@ -37,10 +37,10 @@ export const readFileTool: Tool<ReadArgs> = {
         try {
           st = await stat(target.absolute);
         } catch {
-          return fail(`File not found: ${target.display}. Use list_dir or glob to find the right path.`);
+          return fail(`File not found: ${target.display}. Use glob to find the right path.`);
         }
-        if (st.isDirectory()) return fail(`${target.display} is a directory. Use list_dir instead.`);
-        if (IMAGE_EXT.test(target.absolute)) return fail(`${target.display} is an image. Use view_image to look at it.`);
+        if (st.isDirectory()) return listDirectory(target.absolute, target.display, ctx);
+        if (IMAGE_EXT.test(target.absolute)) return fail(`${target.display} is an image. ${ctx.modelVision ? 'Use view_image to look at it.' : 'The selected model cannot see images.'}`);
         if (st.size > 20 * 1024 * 1024) return fail(`${target.display} is ${(st.size / 1024 / 1024).toFixed(1)} MB; too large to read. Use grep to search it.`);
         const buf = await readFile(target.absolute);
         if (buf.subarray(0, 8000).includes(0)) return fail(`${target.display} looks like a binary file.`);
@@ -69,42 +69,21 @@ export const readFileTool: Tool<ReadArgs> = {
   },
 };
 
-interface ListArgs {
-  path?: string;
+async function listDirectory(absolute: string, display: string, ctx: ToolContext): Promise<ToolResult> {
+  let entries;
+  try {
+    entries = await readdir(absolute, { withFileTypes: true });
+  } catch {
+    return fail(`Directory not found: ${display}`);
+  }
+  const rows = entries
+    .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
+    .sort((a, b) => Number(b.endsWith('/')) - Number(a.endsWith('/')) || a.localeCompare(b));
+  const shown = rows.slice(0, MAX_ENTRIES);
+  ctx.update({ title: `List ${display} — ${rows.length} entries` });
+  const extra = rows.length > shown.length ? `\n[${rows.length - shown.length} more entries not shown]` : '';
+  return ok(shown.length ? `${shown.join('\n')}${extra}` : '(empty directory)');
 }
-
-export const listDirTool: Tool<ListArgs> = {
-  name: 'list_dir',
-  category: 'read',
-  description: 'List the entries of a directory (directories end with "/").',
-  parameters: {
-    type: 'object',
-    properties: { path: { type: 'string', description: 'Directory path; defaults to the workspace root.' } },
-  },
-  title: (a) => `List ${a.path ?? '.'}`,
-  async prepare(args, ctx) {
-    const target = ctx.paths.resolve(args.path ?? '.');
-    return {
-      access: { kind: 'read', paths: [target] },
-      card: { title: `List ${target.display}` },
-      async execute() {
-        let entries;
-        try {
-          entries = await readdir(target.absolute, { withFileTypes: true });
-        } catch {
-          return fail(`Directory not found: ${target.display}`);
-        }
-        const rows = entries
-          .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
-          .sort((a, b) => Number(b.endsWith('/')) - Number(a.endsWith('/')) || a.localeCompare(b));
-        const shown = rows.slice(0, 500);
-        ctx.update({ title: `List ${target.display} — ${rows.length} entries` });
-        const extra = rows.length > shown.length ? `\n[${rows.length - shown.length} more entries not shown]` : '';
-        return ok(shown.length ? `${shown.join('\n')}${extra}` : '(empty directory)');
-      },
-    };
-  },
-};
 
 export function relativeTo(root: string, abs: string): string {
   return path.relative(root, abs).split(path.sep).join('/');

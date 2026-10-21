@@ -115,6 +115,9 @@ describe('OWUI Agent tools and agent loop (integration)', () => {
     const server = http.createServer((_q, r) => r.writeHead(200, { 'Content-Type': 'text/html' }).end('<title>Local Dev</title><h1>Hello from dev server</h1><script>fetch("https://cdn.example.com/x.js")</script>'));
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
     const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
+    const config = vscode.workspace.getConfiguration('owuiAgent');
+    await config.update('browser.enabled', true, vscode.ConfigurationTarget.Global);
+    api.controller.newSession();
     try {
       mock.enqueue(
         call('', { name: 'browser', arguments: { action: 'navigate', url } }),
@@ -136,6 +139,7 @@ describe('OWUI Agent tools and agent loop (integration)', () => {
       assert.match(String((reqs[2]!.body as { messages: { content: unknown }[] }).messages.at(-1)!.content), /Hello from dev server/);
       assert.match(cards[2]!.image ?? '', /^data:image\/png;base64,/);
     } finally {
+      await config.update('browser.enabled', undefined, vscode.ConfigurationTarget.Global);
       api.controller.newSession();
       await new Promise<void>((r) => server.close(() => r()));
     }

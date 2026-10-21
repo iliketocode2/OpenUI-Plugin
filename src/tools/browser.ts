@@ -4,8 +4,10 @@ import { truncateMiddle } from './shell/output';
 import { fail, ok, type Tool, type ToolContext, type ToolResult } from './types';
 
 interface BrowserArgs {
-  action: 'navigate' | 'screenshot' | 'read_text' | 'logs' | 'set_viewport' | 'set_color_scheme' | 'close';
+  action: 'navigate' | 'screenshot' | 'read_text' | 'logs' | 'click' | 'type' | 'set_viewport' | 'set_color_scheme' | 'close';
   url?: string;
+  text?: string;
+  submit?: boolean;
   full_page?: boolean;
   selector?: string;
   width?: number;
@@ -34,23 +36,26 @@ function withLogs(ctx: ToolContext, text: string): string {
 
 export const browserTool: Tool<BrowserArgs> = {
   name: 'browser',
-  category: 'read',
+  category: 'command',
   description:
-    'Headless browser for checking local web apps (localhost only). Actions: navigate (url), screenshot (full_page), read_text (rendered text after JavaScript, optional CSS selector), logs (console messages, uncaught errors, failed and blocked requests since the last call), set_viewport (width, height; e.g. 390x844 for mobile), set_color_scheme (light|dark), close. Start the dev server first with start_process.',
+    'Headless browser for local web apps (localhost only; start the server with start_process first). Actions: navigate (url), screenshot (full_page), read_text (rendered text, optional selector), logs (console, errors, failed requests), click (selector), type (selector, text, submit presses Enter), set_viewport (width, height), set_color_scheme (light|dark), close.',
   parameters: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['navigate', 'screenshot', 'read_text', 'logs', 'set_viewport', 'set_color_scheme', 'close'] },
-      url: { type: 'string', description: 'For navigate: e.g. http://localhost:3000/' },
+      action: { type: 'string', enum: ['navigate', 'screenshot', 'read_text', 'logs', 'click', 'type', 'set_viewport', 'set_color_scheme', 'close'] },
+      url: { type: 'string' },
       full_page: { type: 'boolean' },
-      selector: { type: 'string', description: 'For read_text: CSS selector; defaults to the whole page.' },
+      selector: { type: 'string', description: 'CSS selector, e.g. "#email" or "text=Sign in".' },
+      text: { type: 'string' },
+      submit: { type: 'boolean' },
       width: { type: 'integer', minimum: 200, maximum: 4000 },
       height: { type: 'integer', minimum: 200, maximum: 4000 },
       scheme: { type: 'string', enum: ['light', 'dark'] },
     },
     required: ['action'],
   },
-  title: (a) => (a.action === 'navigate' ? `Browser: open ${a.url ?? ''}` : `Browser: ${a.action.replace('_', ' ')}`),
+  title: (a) =>
+    a.action === 'navigate' ? `Browser: open ${a.url ?? ''}` : a.action === 'click' || a.action === 'type' ? `Browser: ${a.action} ${a.selector ?? ''}` : `Browser: ${a.action.replace('_', ' ')}`,
   async prepare(args, ctx) {
     return {
       access: { kind: 'none' },
@@ -76,6 +81,17 @@ export const browserTool: Tool<BrowserArgs> = {
             ctx.update({ output: logs.slice(0, 4000) });
             return ok(logs || 'No console messages, errors or failed requests since the last check.');
           }
+          case 'click':
+          case 'type': {
+            if (!args.selector) return fail(`${args.action} needs a selector.`);
+            if (args.action === 'click') await b.click(args.selector);
+            else {
+              if (args.text === undefined) return fail('type needs text.');
+              await b.type(args.selector, args.text, !!args.submit);
+            }
+            await new Promise((r) => setTimeout(r, 300));
+            return ok(withLogs(ctx, `Done: ${args.action} ${args.selector}.`));
+          }
           case 'set_viewport':
             if (!args.width || !args.height) return fail('set_viewport needs width and height.');
             await b.setViewport(args.width, args.height);
@@ -88,45 +104,6 @@ export const browserTool: Tool<BrowserArgs> = {
             await b.close();
             return ok('Browser closed and its temporary profile deleted.');
         }
-      },
-    };
-  },
-};
-
-interface InteractArgs {
-  action: 'click' | 'type';
-  selector: string;
-  text?: string;
-  submit?: boolean;
-}
-
-export const browserInteractTool: Tool<InteractArgs> = {
-  name: 'browser_interact',
-  category: 'command',
-  description: 'Click an element or type into a field in the page opened with the browser tool (CSS selector, e.g. "#email", "button[type=submit]", "text=Sign in"). type replaces the field value; submit presses Enter afterwards.',
-  parameters: {
-    type: 'object',
-    properties: {
-      action: { type: 'string', enum: ['click', 'type'] },
-      selector: { type: 'string' },
-      text: { type: 'string' },
-      submit: { type: 'boolean' },
-    },
-    required: ['action', 'selector'],
-  },
-  title: (a) => `Browser: ${a.action} ${a.selector}`,
-  async prepare(args, ctx) {
-    return {
-      access: { kind: 'none' },
-      async execute() {
-        const b = ctx.browser();
-        if (args.action === 'click') await b.click(args.selector);
-        else {
-          if (args.text === undefined) return fail('type needs text.');
-          await b.type(args.selector, args.text, !!args.submit);
-        }
-        await new Promise((r) => setTimeout(r, 300));
-        return ok(withLogs(ctx, `Done: ${args.action} ${args.selector}.`));
       },
     };
   },

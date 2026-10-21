@@ -48,7 +48,7 @@ export function readSettings(): Settings {
     webEnabled: c.get<boolean>('web.enabled', false),
     webAutoApproveSearches: c.get<boolean>('web.autoApproveSearches', false),
     webConfirmedEngine: c.get<string>('web.confirmedEngine', ''),
-    browserEnabled: c.get<boolean>('browser.enabled', true),
+    browserEnabled: c.get<boolean>('browser.enabled', false),
     browserChannel: c.get<'auto' | 'chrome' | 'msedge'>('browser.channel', 'auto'),
     browserAllowExternal: c.get<boolean>('browser.allowExternalRequests', false),
     browserExtraHosts: c.get<string[]>('browser.extraHosts', []),

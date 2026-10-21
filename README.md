@@ -22,7 +22,7 @@ What the extension cannot guarantee:
 - **Agent loop** with tools to read, list, find and search files (ripgrep), write and edit files, run commands (Git Bash, PowerShell, cmd, bash, zsh), manage background processes (dev servers), view images, keep a task list, and ask you questions.
 - **Native or text tool calling.** Native tool calling is used when the model supports it, with an automatic fallback to a text-based protocol.
 - **Permission modes:**
-  - **Plan:** read-only. The agent investigates and asks questions, then writes a plan for you to approve before anything changes.
+  - **Plan:** read-only. The agent investigates and asks questions, then replies with a plan. Switch to another mode when you want it implemented.
   - **Ask before edits** (default): each change is shown as a diff to Apply or Deny.
   - **Auto-accept edits:** workspace changes apply immediately.
   - **Auto-accept, review at end:** changes apply immediately, then you keep or revert each file.
@@ -30,9 +30,10 @@ What the extension cannot guarantee:
   Use the auto-accept modes only on repositories you trust. File changes apply without asking and allow-listed commands run with your privileges, and instructions hidden in files, command output or web pages can steer the model. Changes to `.git/` and `.vscode/` always ask.
 - **Command safety.** Commands always ask unless allow-listed. Commands that change Git history or configuration, publish, launch apps, start containers or services, or use `sudo` always ask, with a warning, however the program name is spelled. Commands with redirection, substitution, nested shells, environment prefixes or paths outside the workspace also always ask. The allowlist is read from your user settings only, so a repository cannot add to it.
 - **Checkpoints and rewind.** The workspace is snapshotted into a private Git repository in extension storage (never your repository) before each message. Rewind code, conversation or both from any message. Any change can be opened in VS Code's diff view.
-- **Project memory.** `.owui/memory/MEMORY.md` plus topic files, loaded at the start of each message and kept up to date by the agent with your approval. A root `AGENTS.md` is loaded as project instructions.
+- **Project memory.** `.owui/memory/MEMORY.md` plus topic files, loaded at the start of each session and kept up to date by the agent with your approval. A root `AGENTS.md` is loaded as project instructions.
 - **Skills.** Folders with a `SKILL.md`, in `.owui/skills/` or `~/.owui-agent/skills/`. The model sees their names and descriptions and loads one when it is relevant. Run **OWUI Agent: Install Example Skill** for a data-visualisation guide with a colour-palette validator.
-- **Context management.** Token usage is tracked per model. Prompts that would not fit are compacted automatically (old tool output first, then a model-written summary), or on demand with `/compact`. Truncation by the server is detected and reported.
+- **Context management.** The context size (16k by default, or what you or Open WebUI set) is sent to Ollama as `num_ctx` with every request, so the model always runs with the size the extension plans for. Token usage is tracked per model. Prompts that would not fit are compacted automatically (old tool output first, then a model-written summary), or on demand with `/compact`. Truncation by the server is detected and reported.
+- **Fast on slow hardware.** The instructions and tool list stay byte-identical for the whole session (the task list, permission mode and memory updates go into the conversation instead), so Ollama can reuse its prompt cache instead of re-reading the conversation on every step.
 - **History.** Conversations are saved locally. Search, resume, rename, delete and export them (Markdown or JSON) from the History view.
 - **Accessible, theme-aware UI.** Follows your VS Code theme (light, dark, high contrast) and is fully keyboard accessible: `Ctrl+Enter` sends, `Esc` stops, and **OWUI Agent: Add Selection to Chat** is bound to `Ctrl+Alt+K`.
 
@@ -50,7 +51,7 @@ What the extension cannot guarantee:
 3. Run **OWUI Agent: Set API Key**.
 4. Open the **OWUI Agent** view, pick a model, and describe what you want built.
 
-For models served by Ollama, set the model's context length to at least 16k tokens, and turn on its **Usage** capability in Open WebUI. Both are explained in `docs/SETUP.md`.
+For models served by Ollama, turn on the model's **Usage** capability in Open WebUI. The extension asks Ollama for a 16k context unless you set another size (click the context meter). Both are explained in `docs/SETUP.md`.
 
 ## Settings
 
@@ -58,7 +59,7 @@ For models served by Ollama, set the model's context length to at least 16k toke
 |---|---|---|
 | `owuiAgent.baseUrl` | `http://localhost:3000` | Your Open WebUI URL; the only network destination. |
 | `owuiAgent.defaultModel` | | Model selected by default. |
-| `owuiAgent.models` | `{}` | Per model: `toolMode` (`auto`, `native`, `text`), `contextSize` (also sent to Ollama as `num_ctx`), `vision`, `local`, `thinking`. |
+| `owuiAgent.models` | `{}` | Per model: `toolMode` (`auto`, `native`, `text`), `contextSize` (sent to Ollama as `num_ctx`; default 16384), `vision`, `local`, `thinking`. |
 | `owuiAgent.shell.windows` / `.posix` | `auto` | Shell for commands. On Windows, `auto` uses Git Bash when installed, otherwise PowerShell. |
 | `owuiAgent.commands.allowlist` | `[]` | Command prefixes that run without asking, for example `npm test`. User settings only. |
 | `owuiAgent.commands.timeoutSeconds` | `120` | Default command timeout. |
@@ -68,7 +69,7 @@ For models served by Ollama, set the model's context length to at least 16k toke
 | `owuiAgent.web.enabled` | `false` | Web search and fetch through Open WebUI. |
 | `owuiAgent.web.autoApproveSearches` | `false` | Send searches without asking; page fetches always ask. |
 | `owuiAgent.web.confirmedEngine` | | Declare the search engine when the API key cannot read it. |
-| `owuiAgent.browser.enabled` | `true` | Localhost browser tool. |
+| `owuiAgent.browser.enabled` | `false` | Localhost browser tool. |
 | `owuiAgent.browser.channel` | `auto` | Chrome or Edge. |
 | `owuiAgent.browser.extraHosts` | `[]` | Extra dev hosts the browser may open. |
 | `owuiAgent.browser.allowExternalRequests` | `false` | Let pages load internet resources. Not recommended. |

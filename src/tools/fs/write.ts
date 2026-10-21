@@ -30,11 +30,11 @@ interface WriteArgs {
 export const writeFileTool: Tool<WriteArgs> = {
   name: 'write_file',
   category: 'edit',
-  description: 'Create a file or overwrite it completely. Parent directories are created. Prefer edit_file for small changes to existing files.',
+  description: 'Create or completely overwrite a file, creating parent folders. Prefer edit_file for small changes.',
   parameters: {
     type: 'object',
     properties: {
-      path: { type: 'string', description: 'File path, relative to the workspace root or absolute.' },
+      path: { type: 'string', description: 'Relative to the workspace root, or absolute.' },
       content: { type: 'string', description: 'The complete file content.' },
     },
     required: ['path', 'content'],
@@ -115,14 +115,14 @@ export const editFileTool: Tool<EditArgs> = {
   name: 'edit_file',
   category: 'edit',
   description:
-    'Replace an exact string in a file. old_string must match the file exactly (including whitespace and indentation) and occur exactly once, unless replace_all is true. Include enough surrounding lines to make it unique. If it fails you get the current content to retry with.',
+    'Replace exact text in a file. old_string must match exactly, including whitespace, and occur once unless replace_all is true; include enough surrounding lines to make it unique.',
   parameters: {
     type: 'object',
     properties: {
       path: { type: 'string' },
-      old_string: { type: 'string', description: 'Exact text to replace.' },
-      new_string: { type: 'string', description: 'Replacement text.' },
-      replace_all: { type: 'boolean', description: 'Replace every occurrence.' },
+      old_string: { type: 'string' },
+      new_string: { type: 'string' },
+      replace_all: { type: 'boolean' },
     },
     required: ['path', 'old_string', 'new_string'],
   },

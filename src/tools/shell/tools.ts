@@ -9,12 +9,9 @@ import { killTree, spawnShell } from './spawn';
 const UPDATE_MS = 300;
 const DISPLAY_CHARS = 6000;
 
+/** The registry narrows this enum to the shells installed on this machine, or drops it when there is only one. */
 function shellParam(): { type: 'string'; enum: string[]; description: string } {
-  return {
-    type: 'string',
-    enum: ['gitbash', 'powershell', 'cmd', 'bash', 'zsh', 'sh'],
-    description: 'Shell to use; defaults to the configured shell. Only shells listed in the environment section are available.',
-  };
+  return { type: 'string', enum: ['gitbash', 'powershell', 'cmd', 'bash', 'zsh', 'sh'], description: 'Defaults to the configured shell.' };
 }
 
 function pickShell(ctx: ToolContext, requested: string | undefined): ShellSpec | string {
@@ -37,15 +34,14 @@ interface RunArgs {
 export const runCommandTool: Tool<RunArgs> = {
   name: 'run_command',
   category: 'command',
-  description:
-    'Run a shell command and wait for it to finish. Use for builds, tests, type-checks, linters, package installs and quick checks (which/where, --version). Not for servers or watchers: use start_process. Commands run non-interactively with no stdin, so pass flags like --yes.',
+  description: 'Run a command and wait for it to finish (builds, tests, linters, installs). No stdin: pass flags like --yes. For servers and watchers use start_process.',
   parameters: {
     type: 'object',
     properties: {
       command: { type: 'string' },
-      description: { type: 'string', description: 'Five to ten words explaining what the command does, shown to the user.' },
+      description: { type: 'string', description: 'Five to ten words, shown to the user.' },
       shell: shellParam(),
-      cwd: { type: 'string', description: 'Working directory; defaults to the workspace root.' },
+      cwd: { type: 'string', description: 'Defaults to the workspace root.' },
       timeout_seconds: { type: 'integer', minimum: 1, maximum: 3600 },
     },
     required: ['command', 'description'],
@@ -131,8 +127,7 @@ interface StartArgs {
 export const startProcessTool: Tool<StartArgs> = {
   name: 'start_process',
   category: 'command',
-  description:
-    'Start a long-running background process (dev server, watcher, static server). Returns an id. Optionally wait until the output matches wait_for (regex) or wait_for_port accepts connections on localhost. All processes are stopped when the session ends.',
+  description: 'Start a background process (dev server, watcher) and return its id; manage it with the process tool. Optionally wait for an output regex or a localhost port.',
   parameters: {
     type: 'object',
     properties: {
@@ -140,9 +135,9 @@ export const startProcessTool: Tool<StartArgs> = {
       description: { type: 'string', description: 'Five to ten words, shown to the user.' },
       shell: shellParam(),
       cwd: { type: 'string' },
-      wait_for: { type: 'string', description: 'Regex to wait for in the output, e.g. "ready|listening".' },
+      wait_for: { type: 'string', description: 'Output regex, e.g. "ready|listening".' },
       wait_for_port: { type: 'integer', minimum: 1, maximum: 65535 },
-      wait_seconds: { type: 'integer', minimum: 1, maximum: 600, description: 'Maximum wait (default 60).' },
+      wait_seconds: { type: 'integer', minimum: 1, maximum: 600, description: 'Default 60.' },
     },
     required: ['command', 'description'],
   },
@@ -185,73 +180,48 @@ export const startProcessTool: Tool<StartArgs> = {
   },
 };
 
-interface IdArgs {
-  id: string;
+interface ProcessArgs {
+  action: 'output' | 'stop' | 'list';
+  id?: string;
+  all?: boolean;
 }
 
-export const readProcessOutputTool: Tool<IdArgs & { all?: boolean }> = {
-  name: 'read_process_output',
+export const processTool: Tool<ProcessArgs> = {
+  name: 'process',
   category: 'read',
-  description: 'Read output from a background process: new output since the last read, or all buffered output with all=true.',
+  description: 'Manage background processes from start_process: "output" returns new output (all=true for everything buffered), "stop" stops one and its children, "list" lists them.',
   parameters: {
     type: 'object',
-    properties: { id: { type: 'string' }, all: { type: 'boolean' } },
-    required: ['id'],
+    properties: { action: { type: 'string', enum: ['output', 'stop', 'list'] }, id: { type: 'string' }, all: { type: 'boolean' } },
+    required: ['action'],
   },
-  title: (a) => `Read output of ${a.id}`,
+  title: (a) => (a.action === 'list' ? 'List background processes' : a.action === 'stop' ? `Stop ${a.id}` : `Read output of ${a.id}`),
   async prepare(args, ctx) {
     return {
       access: { kind: 'none' },
       async execute() {
+        if (args.action === 'list') {
+          const list = ctx.processes.list();
+          if (!list.length) return ok('No background processes.');
+          return ok(
+            list
+              .map((p) => `${p.id}\t${p.exitCode === undefined ? 'running' : `exited (${p.exitCode})`}\t${Math.round((Date.now() - p.startedAt) / 1000)}s\t${p.command}`)
+              .join('\n'),
+          );
+        }
+        if (!args.id) return fail(`id is required for action "${args.action}".`);
         const p = ctx.processes.get(args.id);
-        if (!p) return fail(`No process with id ${args.id}. Use list_processes.`);
+        if (!p) return fail(`No process with id ${args.id}. Use action "list".`);
+        if (args.action === 'stop') {
+          await ctx.processes.stop(args.id);
+          ctx.update({ title: `Stopped ${p.id} (${p.description || p.command})` });
+          return ok(`Stopped process ${p.id}.`);
+        }
         const text = args.all ? p.output.all() : p.output.sinceLastRead();
         const t = truncateMiddle(text, ctx.settings.maxOutputChars);
         const state = p.exitCode === undefined ? 'running' : `exited with code ${p.exitCode}`;
         ctx.update({ title: `Output of ${p.id} (${p.description || p.command})`, output: t.text.slice(-DISPLAY_CHARS) });
         return ok(`Process ${p.id} is ${state}.\n${t.text || '(no new output)'}`);
-      },
-    };
-  },
-};
-
-export const stopProcessTool: Tool<IdArgs> = {
-  name: 'stop_process',
-  category: 'command',
-  description: 'Stop a background process and its child processes.',
-  parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-  title: (a) => `Stop ${a.id}`,
-  async prepare(args, ctx) {
-    return {
-      access: { kind: 'none' },
-      async execute() {
-        const p = ctx.processes.get(args.id);
-        if (!p) return fail(`No process with id ${args.id}.`);
-        await ctx.processes.stop(args.id);
-        ctx.update({ title: `Stopped ${p.id} (${p.description || p.command})` });
-        return ok(`Stopped process ${p.id}.`);
-      },
-    };
-  },
-};
-
-export const listProcessesTool: Tool<Record<string, never>> = {
-  name: 'list_processes',
-  category: 'read',
-  description: 'List background processes started in this session.',
-  parameters: { type: 'object', properties: {} },
-  title: () => 'List background processes',
-  async prepare(_args, ctx) {
-    return {
-      access: { kind: 'none' },
-      async execute() {
-        const list = ctx.processes.list();
-        if (!list.length) return ok('No background processes.');
-        return ok(
-          list
-            .map((p) => `${p.id}\t${p.exitCode === undefined ? 'running' : `exited (${p.exitCode})`}\t${Math.round((Date.now() - p.startedAt) / 1000)}s\t${p.command}`)
-            .join('\n'),
-        );
       },
     };
   },

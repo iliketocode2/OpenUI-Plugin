@@ -50,7 +50,7 @@ For Ollama-backed models, set these in **Admin Panel → Settings → Models →
 
 | Setting | Why |
 |---|---|
-| **Context Length (num_ctx)**: 16384 or more | Ollama's default (often 4096) is too small for the agent's instructions and tool definitions, and Ollama silently drops the start of longer prompts. You can instead set `contextSize` per model in the `owuiAgent.models` setting; the extension then sends it as `num_ctx` with each request. |
+| **Context Length (num_ctx)**: optional | The extension sends `num_ctx` with every request: `contextSize` from the `owuiAgent.models` setting (also set by clicking the context meter), otherwise the size set here if Open WebUI reports it, otherwise 16384. Keep it the same across requests, because Ollama reloads the model whenever it changes (about 45 s on CPU). |
 | **Capabilities → Usage**: on | Lets the extension read token counts, calibrate its estimates and warn when a prompt was truncated. |
 | **Capabilities → Vision**: on (vision models only) | Lets the agent look at screenshots. |
 

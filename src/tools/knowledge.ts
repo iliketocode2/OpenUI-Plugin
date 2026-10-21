@@ -25,12 +25,12 @@ export const updateMemoryTool: Tool<MemoryArgs> = {
   name: 'update_memory',
   category: 'edit',
   description:
-    'Save a durable project fact for future sessions: build and test commands, conventions, architecture decisions, environment quirks. Writes .owui/memory/<topic>.md and links it from MEMORY.md. Replace the whole topic content; set delete=true to remove a topic. Never store secrets.',
+    'Save a durable project fact for future sessions (commands, conventions, decisions, quirks) to .owui/memory/<topic>.md. Replaces the topic; delete=true removes it. Never store secrets.',
   parameters: {
     type: 'object',
     properties: {
-      topic: { type: 'string', description: 'Lowercase kebab-case topic name, e.g. "build-and-test".' },
-      content: { type: 'string', description: 'Full Markdown content of the topic file.' },
+      topic: { type: 'string', description: 'kebab-case, e.g. "build-and-test".' },
+      content: { type: 'string', description: 'Full Markdown content.' },
       summary: { type: 'string', description: 'One-line summary for the index.' },
       delete: { type: 'boolean' },
     },

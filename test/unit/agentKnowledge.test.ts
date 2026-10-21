@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SUMMARY_PREFIX } from '../../src/agent/compaction';
@@ -31,9 +31,9 @@ const system = (i: number) => String(body(i).messages[0]!.content);
 const say = (content: string) => ({ kind: 'sse' as const, chunks: sseChunks({ content }) });
 const call = (content: string, ...calls: { name: string; arguments: object }[]) => ({ kind: 'sse' as const, chunks: sseChunks({ content, toolCalls: calls }) });
 
-describe('memory, skills, todos and plan in the system prompt', () => {
-  it('includes AGENTS.md, the memory index, skills, the task list and the approved plan', async () => {
-    const t = await harness({ mode: 'plan', plan: () => ({ approved: true, mode: 'auto' }) });
+describe('memory and skills in the system prompt', () => {
+  it('includes AGENTS.md, the memory index and skills, and returns the task list in the tool result', async () => {
+    const t = await harness({ mode: 'ask' });
     await writeFile(path.join(t.workspace, 'AGENTS.md'), 'Always use pnpm.');
     await mkdir(path.join(t.workspace, '.owui', 'memory'), { recursive: true });
     await writeFile(path.join(t.workspace, '.owui', 'memory', 'MEMORY.md'), '# Project memory\n- [build](build.md) — pnpm test runs vitest\n');
@@ -41,7 +41,6 @@ describe('memory, skills, todos and plan in the system prompt', () => {
     await writeFile(path.join(t.workspace, '.owui', 'skills', 'viz', 'SKILL.md'), '---\nname: dataviz\ndescription: Charts with accessible palettes\n---\nBody');
     mock.enqueue(
       call('', { name: 'todo_write', arguments: { todos: [{ content: 'Write schema', status: 'in_progress' }] } }),
-      call('', { name: 'exit_plan_mode', arguments: { plan: '# Plan\nUse Supabase.' } }),
       call('', { name: 'load_skill', arguments: { name: 'dataviz' } }),
       say('ok'),
     );
@@ -49,23 +48,29 @@ describe('memory, skills, todos and plan in the system prompt', () => {
     expect(system(0)).toContain('Always use pnpm.');
     expect(system(0)).toContain('pnpm test runs vitest');
     expect(system(0)).toContain('- dataviz: Charts with accessible palettes');
-    expect(system(0)).not.toContain('# Current task list');
-    expect(system(1)).toContain('- [~] Write schema');
-    expect(system(1)).not.toContain('# Approved plan');
-    expect(system(2)).toContain('# Approved plan');
-    expect(system(2)).toContain('Use Supabase.');
-    expect(String(body(3).messages.at(-1)!.content)).toContain('Body');
+    expect(system(1)).toBe(system(0));
+    expect(system(1)).not.toContain('Write schema');
+    expect(String(body(1).messages.at(-1)!.content)).toContain('- [~] Write schema');
+    expect(String(body(2).messages.at(-1)!.content)).toContain('Body');
   });
 
-  it('saves memory through update_memory with an approval in ask mode', async () => {
+  it('offers load_skill only when skills exist', async () => {
+    const t = await harness({ mode: 'ask' });
+    mock.enqueue(say('ok'));
+    await t.session.send('hi', t.ctx);
+    expect((body(0).tools as { function: { name: string } }[]).map((d) => d.function.name)).not.toContain('load_skill');
+  });
+
+  it('saves memory through update_memory with an approval in ask mode, without changing the system prompt', async () => {
     const t = await harness({ mode: 'ask' });
     mock.enqueue(call('', { name: 'update_memory', arguments: { topic: 'build', content: 'Run pnpm test', summary: 'Testing' } }), say('saved'));
     await t.session.send('remember how to test', t.ctx);
     expect(t.approvalsSeen.map((a) => a.tool)).toEqual(['update_memory']);
     expect(t.createdDirs).toEqual([path.join(t.workspace, '.owui')]);
+    expect(await readFile(path.join(t.workspace, '.owui', 'memory', 'MEMORY.md'), 'utf8')).toContain('- [build](build.md) — Testing');
     mock.enqueue(say('next'));
     await t.session.send('again', t.ctx);
-    expect(system(2)).toContain('- [build](build.md) — Testing');
+    expect(system(2)).toBe(system(0));
   });
 });
 
@@ -73,7 +78,7 @@ describe('automatic compaction', () => {
   const longAnswer = (i: number) => `Step ${i}: ${'lorem ipsum dolor sit amet '.repeat(220)}`;
 
   it('summarizes older turns before a request that would not fit, then continues', async () => {
-    const t = await harness({ override: { contextSize: 16000 } });
+    const t = await harness({ override: { contextSize: 13000 } });
     for (let i = 0; i < 4; i++) {
       mock.enqueue(say(longAnswer(i)));
       await t.session.send(`question ${i}`, t.ctx);
@@ -84,7 +89,7 @@ describe('automatic compaction', () => {
     const summaryReq = body(before);
     expect(summaryReq.tools).toBeUndefined();
     expect(String(summaryReq.messages[0]!.content)).toMatch(/compress the history of a coding session/);
-    expect(String(summaryReq.messages[1]!.content)).toContain('USER:\nquestion 0');
+    expect(String(summaryReq.messages[1]!.content)).toMatch(/USER:\n\[Permission mode: ask before acting[^\]]*\]\n\nquestion 0/);
     const turn = body(before + 1);
     expect(String(turn.messages[1]!.content).startsWith(SUMMARY_PREFIX)).toBe(true);
     expect(String(turn.messages[1]!.content)).toContain('four answers given');
@@ -94,7 +99,7 @@ describe('automatic compaction', () => {
   });
 
   it('keeps the conversation unchanged when summarizing fails', async () => {
-    const t = await harness({ override: { contextSize: 16000 }, maxRetries: 0 });
+    const t = await harness({ override: { contextSize: 13000 }, maxRetries: 0 });
     for (let i = 0; i < 4; i++) {
       mock.enqueue(say(longAnswer(i)));
       await t.session.send(`question ${i}`, t.ctx);

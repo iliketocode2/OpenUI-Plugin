@@ -52,30 +52,32 @@ describe('OWUI Agent plan mode, diffs and rewind (integration)', () => {
     poller = undefined;
   });
 
-  it('plans read-only, then implements after approval in the chosen mode', async () => {
+  it('plans read-only, then implements after the user switches mode, with an unchanged prompt and tool list', async () => {
     await api.controller.setMode('plan');
-    poller = setInterval(() => {
-      for (const p of items('plan')) if (p.status === 'open') api.controller.planDecision(p.id, { approved: true, mode: 'auto' });
-    }, 20);
     mock.enqueue(
-      call('Looking around.', { name: 'list_dir', arguments: {} }),
-      call('Plan ready.', { name: 'exit_plan_mode', arguments: { plan: '# Plan\n- Create `planned.txt`' } }),
-      call('Implementing.', { name: 'write_file', arguments: { path: 'planned.txt', content: 'from the plan\n' } }),
-      say('Done. Tested: nothing to test.'),
+      call('Looking around.', { name: 'read_file', arguments: { path: '.' } }),
+      call('Trying early.', { name: 'write_file', arguments: { path: 'planned.txt', content: 'too early\n' } }),
+      say('Plan:\n1. Create `planned.txt`'),
     );
-    const finished = await Promise.race([api.controller.send('Plan, then create planned.txt').then(() => true), new Promise<false>((r) => setTimeout(() => r(false), 40_000))]);
+    await api.controller.send('Plan how to create planned.txt');
+    await assert.rejects(readFile(path.join(ws, 'planned.txt'), 'utf8'));
+    await api.controller.setMode('auto');
+    mock.enqueue(call('Implementing.', { name: 'write_file', arguments: { path: 'planned.txt', content: 'from the plan\n' } }), say('Done. Tested: nothing to test.'));
+    const finished = await Promise.race([api.controller.send('Go ahead').then(() => true), new Promise<false>((r) => setTimeout(() => r(false), 40_000))]);
     assert.ok(
       finished,
       `send did not finish: mode=${api.controller.mode} toolOutputs=${JSON.stringify(items('tool').map((t) => t.output ?? ''))} busy=${api.controller.viewState().busy} key=${!!(await api.keys.get())} requests=${mock.chatRequests().length} pending=${mock.pending()} ${JSON.stringify(
         api.controller.viewState().transcript.map((t) => [t.kind, 'text' in t ? t.text.slice(0, 160) : 'title' in t ? `${t.title} ${t.status}` : 'status' in t ? t.status : '']),
       )}`,
     );
-    assert.equal(api.controller.mode, 'auto');
-    assert.equal(items('plan')[0]?.status, 'approved');
     assert.equal(await readFile(path.join(ws, 'planned.txt'), 'utf8'), 'from the plan\n');
-    const firstTools = (mock.chatRequests()[0]!.body as { tools: { function: { name: string } }[] }).tools.map((t) => t.function.name);
-    assert.ok(!firstTools.includes('write_file'));
-    assert.ok(firstTools.includes('exit_plan_mode'));
+    const bodies = mock.chatRequests().map((r) => r.body as { messages: { content: unknown }[]; tools: unknown[] });
+    assert.equal(bodies.length, 5);
+    assert.match(String(bodies[2]!.messages.at(-1)?.content ?? ''), /not available in plan mode/);
+    for (const b of bodies) {
+      assert.deepEqual(b.messages[0], bodies[0]!.messages[0]);
+      assert.deepEqual(b.tools, bodies[0]!.tools);
+    }
   });
 
   it('opens the native diff editor for an edit', async () => {

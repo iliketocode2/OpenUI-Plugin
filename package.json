@@ -300,7 +300,7 @@
         },
         "owuiAgent.browser.enabled": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "markdownDescription": "Give the agent a headless browser for local development servers (localhost only), using your installed Chrome or Edge with a fresh temporary profile. No browser is ever downloaded.",
           "scope": "application"
         },

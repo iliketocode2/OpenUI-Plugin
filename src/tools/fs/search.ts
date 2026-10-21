@@ -15,12 +15,12 @@ interface GlobArgs {
 export const globTool: Tool<GlobArgs> = {
   name: 'glob',
   category: 'read',
-  description: 'Find files by glob pattern (e.g. "src/**/*.ts", "**/package.json"). Respects .gitignore. Returns paths relative to the search directory.',
+  description: 'Find files by glob, e.g. "src/**/*.ts", respecting .gitignore. Returns paths relative to the search directory.',
   parameters: {
     type: 'object',
     properties: {
-      pattern: { type: 'string', description: 'Glob pattern.' },
-      path: { type: 'string', description: 'Directory to search; defaults to the workspace root.' },
+      pattern: { type: 'string' },
+      path: { type: 'string', description: 'Directory; defaults to the workspace root.' },
     },
     required: ['pattern'],
   },
@@ -65,16 +65,15 @@ interface GrepArgs {
 export const grepTool: Tool<GrepArgs> = {
   name: 'grep',
   category: 'read',
-  description:
-    'Search file contents with a regular expression (ripgrep syntax). Respects .gitignore. output="files" lists matching files, "count" counts matches per file, "content" (default) shows matching lines with line numbers.',
+  description: 'Search file contents with a regex (ripgrep syntax), respecting .gitignore. output: content (matching lines, default), files, or count.',
   parameters: {
     type: 'object',
     properties: {
-      pattern: { type: 'string', description: 'Regular expression.' },
-      path: { type: 'string', description: 'File or directory to search; defaults to the workspace root.' },
-      glob: { type: 'string', description: 'Only search files matching this glob, e.g. "*.ts".' },
+      pattern: { type: 'string' },
+      path: { type: 'string', description: 'File or directory; defaults to the workspace root.' },
+      glob: { type: 'string', description: 'e.g. "*.ts"' },
       ignore_case: { type: 'boolean' },
-      context: { type: 'integer', minimum: 0, maximum: 10, description: 'Lines of context around each match.' },
+      context: { type: 'integer', minimum: 0, maximum: 10, description: 'Lines around each match.' },
       output: { type: 'string', enum: ['content', 'files', 'count'] },
       max_results: { type: 'integer', minimum: 1, maximum: 1000, description: 'Default 200.' },
     },

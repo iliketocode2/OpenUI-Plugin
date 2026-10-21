@@ -6,7 +6,7 @@ import { stripThinkTags } from '../owui/reasoning';
 import type { StreamDelta } from '../owui/streamAssembler';
 import { RESULT_TAG, TextToolParser, describeToolsForText, extractCallsIgnoringFences, formatToolResults } from '../owui/textToolProtocol';
 import { checkTruncation, measurePrompt, outputReserve, preflight, type TokenCalibrator } from '../owui/tokens';
-import type { AssistantTurn, ContentPart, Usage, WireMessage } from '../owui/types';
+import type { AssistantTurn, ContentPart, ToolDefinition, Usage, WireMessage } from '../owui/types';
 import type { CheckpointManager, PlannedChange, RewindResult } from '../checkpoints/checkpoints';
 import { describeSkills, type Skill } from '../skills/discovery';
 import type { SessionRecord } from '../storage/history';
@@ -16,7 +16,6 @@ import type {
   AgentMode,
   ApprovalDecision,
   AskUserQuestion,
-  PlanAnswer,
   ReviewFile,
   RewindScope,
   TodoItem,
@@ -26,7 +25,7 @@ import type {
 } from '../shared/protocol';
 import type { BrowserSession } from '../browser/session';
 import type { OwuiWeb } from '../owui/web';
-import { toolsForMode, type ToolRegistry } from '../tools/registry';
+import { allowedInMode, type ToolRegistry } from '../tools/registry';
 import { truncateMiddle } from '../tools/shell/output';
 import type { ProcessManager } from '../tools/shell/processManager';
 import type { ShellRegistry } from '../tools/shell/shells';
@@ -34,6 +33,7 @@ import { isPrepared, type ImageAttachment, type Tool, type ToolContext, type Too
 import { coerceArgs, parseArguments, validateArgs } from '../tools/validate';
 import type { PathGuard } from '../workspace/paths';
 import { decide } from './permissions';
+import { modeNote } from './systemPrompt';
 
 type AssistantItem = Extract<TranscriptItem, { kind: 'assistant' }>;
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
@@ -64,7 +64,7 @@ export interface AgentEnv {
 export interface RunContext {
   model: ResolvedModel;
   toolMode: 'native' | 'text';
-  systemPrompt(mode: AgentMode): string;
+  systemPrompt(): string;
   calibrator: TokenCalibrator;
   mode(): AgentMode;
   allowlist(): string[];
@@ -73,7 +73,6 @@ export interface RunContext {
   warnOnce(key: string, text: string): void;
   onToolsUnsupported(): void;
   addAllowlistEntry(entry: string): Promise<void>;
-  setMode(mode: AgentMode): Promise<void>;
   loadContext(): Promise<{ sections: string[]; skills: Skill[] }>;
   onWorkspaceDirCreated(dir: string): void;
   toolEnabled(name: string): boolean;
@@ -93,6 +92,15 @@ interface CallOutcome {
   result: ToolResult;
 }
 
+/** The system message and tools for a session. Rebuilt only when the model, tool mode or tool set changes, so every
+ * request in between starts with byte-identical text and Ollama can reuse its prompt cache. */
+interface FrozenPrompt {
+  key: string;
+  system: string;
+  tools: Tool[];
+  defs: ToolDefinition[];
+}
+
 const USAGE_HELP =
   'Open WebUI did not report token usage for this model, so prompt-truncation detection is unavailable. ' +
   'To enable it: Admin Panel → Settings → Models → edit the model → Capabilities → enable "Usage", then Save.';
@@ -107,12 +115,13 @@ export class AgentSession {
   private controller: AbortController | undefined;
   private readonly approvals = new Map<string, (d: ApprovalDecision) => void>();
   private readonly questions = new Map<string, (answers: string[][] | undefined) => void>();
-  private readonly plans = new Map<string, (answer: PlanAnswer | undefined) => void>();
   private readonly turnStarts = new Map<string, { wire: number; transcript: number }>();
   private runCheckpoint: string | undefined;
   private contextSections: string[] = [];
   private skills: Skill[] = [];
-  approvedPlan: string | undefined;
+  private contextLoaded = false;
+  private frozen: FrozenPrompt | undefined;
+  private announcedMode: AgentMode | undefined;
   created: number = Date.now();
   private lastCallKey = '';
   private repeatCount = 0;
@@ -147,10 +156,6 @@ export class AgentSession {
     this.questions.get(itemId)?.(answers);
   }
 
-  resolvePlan(itemId: string, answer: PlanAnswer): void {
-    this.plans.get(itemId)?.(answer);
-  }
-
   async rewindPreview(userItemId: string): Promise<{ changes: PlannedChange[]; method: 'git' | 'backups' } | undefined> {
     const item = this.transcript.find((t) => t.id === userItemId);
     if (!item || item.kind !== 'user' || !item.checkpoint) return undefined;
@@ -178,6 +183,7 @@ export class AgentSession {
       if (start) {
         this.wire.splice(start.wire);
         this.transcript.splice(start.transcript);
+        this.announcedMode = undefined;
         for (const id of [...this.turnStarts.keys()]) if (!this.transcript.some((t) => t.id === id)) this.turnStarts.delete(id);
       }
     } else if (result) {
@@ -226,8 +232,7 @@ export class AgentSession {
     user.checkpoint = cp.id;
     this.runCheckpoint = cp.id;
     if (cp.snapshotError) ctx.warnOnce(`checkpoint:${this.id}`, `Workspace snapshots are unavailable (${cp.snapshotError}). Rewind will only undo files the agent edited, not changes made by commands.`);
-    this.wire.push({ role: 'user', content: trimmed });
-    await this.refreshContext(ctx);
+    this.wire.push({ role: 'user', content: this.withModeNote(trimmed, ctx.mode()) });
     if (this.controller.signal.aborted) {
       this.controller = undefined;
       this.events.changed();
@@ -240,8 +245,16 @@ export class AgentSession {
 
   async resume(ctx: RunContext): Promise<void> {
     if (!this.canResume()) return;
-    if (!this.contextSections.length) await this.refreshContext(ctx);
+    if (ctx.mode() !== this.announcedMode) this.wire.push({ role: 'user', content: this.withModeNote('Continue.', ctx.mode()) });
     await this.run(ctx);
+  }
+
+  /** Tells the model about the permission mode in the conversation, not the system prompt, so a mode change
+   * appends text instead of invalidating the cached prefix. */
+  private withModeNote(text: string, mode: AgentMode): string {
+    if (mode === this.announcedMode) return text;
+    this.announcedMode = mode;
+    return `${modeNote(mode)}\n\n${text}`;
   }
 
   async dispose(): Promise<void> {
@@ -259,8 +272,7 @@ export class AgentSession {
     this.controller = new AbortController();
     this.events.changed();
     try {
-      if (!this.contextSections.length) await this.refreshContext(ctx);
-      await this.maybeCompact(ctx, ctx.mode(), ctx.toolMode, this.controller.signal, true);
+      await this.maybeCompact(ctx, ctx.toolMode, this.controller.signal, true);
     } finally {
       this.controller = undefined;
       this.events.changed();
@@ -283,7 +295,6 @@ export class AgentSession {
       turns: [...this.turnStarts],
     };
     if (model) record.model = model;
-    if (this.approvedPlan) record.approvedPlan = this.approvedPlan;
     return record;
   }
 
@@ -292,7 +303,6 @@ export class AgentSession {
     this.transcript.splice(0, this.transcript.length, ...record.transcript);
     this.wire.splice(0, this.wire.length, ...record.wire);
     this.todos = record.todos ?? [];
-    this.approvedPlan = record.approvedPlan;
     this.env.checkpoints.restore(record.checkpoints ?? []);
     this.turnStarts.clear();
     for (const [id, start] of record.turns ?? []) this.turnStarts.set(id, start);
@@ -301,7 +311,7 @@ export class AgentSession {
         t.status = 'cancelled';
         t.approval = undefined;
       }
-      if ((t.kind === 'question' || t.kind === 'plan') && t.status === 'open') t.status = 'cancelled';
+      if (t.kind === 'question' && t.status === 'open') t.status = 'cancelled';
       if (t.kind === 'assistant' && t.streaming) {
         t.streaming = false;
         t.stopped = true;
@@ -320,11 +330,11 @@ export class AgentSession {
     }
   }
 
-  private availableTools(ctx: RunContext, mode: AgentMode) {
-    return toolsForMode(this.env.tools.list(), mode).filter((t) => ctx.toolEnabled(t.name));
-  }
-
-  private async refreshContext(ctx: RunContext): Promise<void> {
+  /** Project instructions, memory and skills are read once per session; a memory change made with update_memory is
+   * already in the conversation as that tool's result. */
+  private async loadContextOnce(ctx: RunContext): Promise<void> {
+    if (this.contextLoaded) return;
+    this.contextLoaded = true;
     try {
       const loaded = await ctx.loadContext();
       this.contextSections = loaded.sections;
@@ -335,22 +345,23 @@ export class AgentSession {
     }
   }
 
-  private systemMessage(ctx: RunContext, mode: AgentMode, toolMode: 'native' | 'text', defs: ReturnType<ToolRegistry['definitions']>): string {
-    const parts = [ctx.systemPrompt(mode), ...this.contextSections, ...ctx.extraPromptSections()];
+  private async prompt(ctx: RunContext, toolMode: 'native' | 'text'): Promise<FrozenPrompt> {
+    await this.loadContextOnce(ctx);
+    const tools = this.env.tools.select({ vision: ctx.model.vision, hasSkills: this.skills.length > 0, enabled: (name) => ctx.toolEnabled(name) });
+    const key = [ctx.model.id, toolMode, ...tools.map((t) => t.name)].join('|');
+    if (this.frozen?.key === key) return this.frozen;
+    const defs = this.env.tools.definitions(tools, { shells: this.env.shells.available().map((s) => s.id) });
+    const parts = [ctx.systemPrompt(), ...this.contextSections, ...ctx.extraPromptSections()];
     const skills = describeSkills(this.skills);
     if (skills) parts.push(skills);
-    if (this.approvedPlan) parts.push(`# Approved plan\nThe user approved this plan. Follow it, and tell the user about any deviation.\n\n${this.approvedPlan}`);
-    if (this.todos.length) {
-      const mark = (s: TodoItem['status']) => (s === 'completed' ? 'x' : s === 'in_progress' ? '~' : ' ');
-      parts.push(`# Current task list\n${this.todos.map((t) => `- [${mark(t.status)}] ${t.content}`).join('\n')}`);
-    }
     if (toolMode === 'text') parts.push(describeToolsForText(defs));
-    return parts.join('\n\n');
+    this.frozen = { key, system: parts.join('\n\n'), tools, defs };
+    return this.frozen;
   }
 
-  private async maybeCompact(ctx: RunContext, mode: AgentMode, toolMode: 'native' | 'text', signal: AbortSignal, force = false): Promise<void> {
-    const defs = this.env.tools.definitions(this.availableTools(ctx, mode));
-    const fixed = measurePrompt([{ role: 'system', content: this.systemMessage(ctx, mode, toolMode, defs) }], toolMode === 'native' ? defs : undefined);
+  private async maybeCompact(ctx: RunContext, toolMode: 'native' | 'text', signal: AbortSignal, force = false): Promise<void> {
+    const { system, defs } = await this.prompt(ctx, toolMode);
+    const fixed = measurePrompt([{ role: 'system', content: system }], toolMode === 'native' ? defs : undefined);
     const fixedTokens = ctx.calibrator.estimate(ctx.model.id, fixed);
     const budget = Math.max(1, ctx.model.contextSize - outputReserve(ctx.model.contextSize) - fixedTokens);
     const estimate = (msgs: WireMessage[]) => ctx.calibrator.estimate(ctx.model.id, measurePrompt(msgs));
@@ -366,7 +377,7 @@ export class AgentSession {
             { role: 'user', content },
           ],
           ...(ctx.model.thinking !== undefined ? { think: ctx.model.thinking } : {}),
-          ...(ctx.model.contextSource === 'setting' ? { numCtx: ctx.model.contextSize } : {}),
+          numCtx: ctx.model.contextSize,
         },
         {},
         signal,
@@ -398,6 +409,7 @@ export class AgentSession {
     }
     const appended = this.wire.slice(startLength);
     if (result.stage === 'summarized') {
+      this.announcedMode = undefined;
       const headLength = result.wire.length - (startLength - result.summarizedMessages);
       for (const [id, start] of [...this.turnStarts]) {
         if (start.wire < result.summarizedMessages) this.turnStarts.delete(id);
@@ -440,7 +452,6 @@ export class AgentSession {
     } finally {
       for (const resolve of this.approvals.values()) resolve({ decision: 'deny' });
       for (const resolve of this.questions.values()) resolve(undefined);
-      for (const resolve of this.plans.values()) resolve(undefined);
       this.controller = undefined;
       if (ctx.mode() === 'review') this.pushReview();
       this.events.changed();
@@ -470,11 +481,9 @@ export class AgentSession {
   }
 
   private async modelTurn(ctx: RunContext, toolMode: 'native' | 'text', signal: AbortSignal): Promise<{ calls: PendingCall[] } | 'switch-to-text' | undefined> {
-    const mode = ctx.mode();
-    await this.maybeCompact(ctx, mode, toolMode, signal);
+    await this.maybeCompact(ctx, toolMode, signal);
     if (signal.aborted) return undefined;
-    const defs = this.env.tools.definitions(this.availableTools(ctx, mode));
-    const system = this.systemMessage(ctx, mode, toolMode, defs);
+    const { system, defs } = await this.prompt(ctx, toolMode);
     // Open WebUI 0.12 fails with HTTP 400 "'NoneType' object is not iterable" on an assistant message with neither
     // content nor tool calls. Earlier versions could save one, so skip them here to repair old sessions too.
     const messages: WireMessage[] = [{ role: 'system', content: system }, ...this.wire.filter((m) => !isEmptyAssistant(m))];
@@ -485,10 +494,7 @@ export class AgentSession {
     if (verdict.kind === 'over') {
       this.pushError(
         `The next request (about ${estimate} tokens including the agent's instructions and tool definitions) does not fit in ${ctx.model.name}'s context window ` +
-          `(${ctx.model.contextSize} tokens${ctx.model.contextSource === 'assumed' ? ', assumed because Open WebUI does not report it' : ''}). ` +
-          (ctx.model.contextSource === 'assumed'
-            ? 'If your server already runs this model with a larger context, set the size with the button below (it is also sent to Ollama as num_ctx), or start a new session.'
-            : 'Raise the context size with the button below (it is also sent to Ollama as num_ctx), or start a new session.'),
+          `(${ctx.model.contextSize} tokens, sent to Ollama as num_ctx). Raise the context size with the button below if the server has the memory for it, or start a new session.`,
         'setContextSize',
       );
       return undefined;
@@ -510,7 +516,8 @@ export class AgentSession {
           messages,
           ...(toolMode === 'native' ? { tools: defs } : { stop: [RESULT_TAG] }),
           ...(ctx.model.thinking !== undefined ? { think: ctx.model.thinking } : {}),
-          ...(ctx.model.contextSource === 'setting' ? { numCtx: ctx.model.contextSize } : {}),
+          // Always sent, and always the same value, so Ollama never silently uses a smaller default or reloads the model.
+          numCtx: ctx.model.contextSize,
         },
         {
           onDelta: (d) => {
@@ -639,8 +646,12 @@ export class AgentSession {
       return { result, ...extra };
     };
     if (call.parseError) return finish('error', { content: call.parseError, isError: true });
-    if (!tool) {
-      const names = this.env.tools.list().map((t) => t.name).join(', ');
+    if (tool && !ctx.toolEnabled(tool.name)) {
+      return finish('error', { content: `${tool.name} is turned off in the OWUI Agent settings.`, isError: true });
+    }
+    const offered = this.frozen?.tools ?? [];
+    if (!tool || !offered.includes(tool)) {
+      const names = offered.map((t) => t.name).join(', ');
       return finish('error', { content: `Unknown tool "${call.name}". Available tools: ${names}.`, isError: true });
     }
     const parsed = parseArguments(call.arguments);
@@ -648,15 +659,9 @@ export class AgentSession {
     const args = coerceArgs(tool.parameters, parsed.value);
     const errors = validateArgs(tool.parameters, args);
     card.title = safeTitle(tool, args);
-    if (!ctx.toolEnabled(tool.name)) {
-      return finish('error', { content: `${tool.name} is turned off in the OWUI Agent settings.`, isError: true });
-    }
-    if (!toolsForMode([tool], ctx.mode()).length) {
+    if (!allowedInMode(tool, ctx.mode())) {
       return finish('error', {
-        content:
-          ctx.mode() === 'plan'
-            ? `${tool.name} is not available in plan mode. Investigate with read-only tools, then call exit_plan_mode with your plan.`
-            : `${tool.name} is only available in plan mode.`,
+        content: `${tool.name} is not available in plan mode, which is read-only. Finish investigating, then reply with your plan; the user switches mode to implement it.`,
         isError: true,
       });
     }
@@ -741,36 +746,11 @@ export class AgentSession {
       workspaceDirCreated: (dir) => ctx.onWorkspaceDirCreated(dir),
       browser: this.env.browser,
       web: this.env.web,
-      presentPlan: (plan) => this.presentPlan(plan, ctx, signal),
       setTodos: (todos) => {
         this.todos = todos;
         this.events.changed();
       },
     };
-  }
-
-  private async presentPlan(plan: string, ctx: RunContext, signal: AbortSignal): Promise<PlanAnswer> {
-    const item: Extract<TranscriptItem, { kind: 'plan' }> = { id: randomUUID(), kind: 'plan', ts: Date.now(), plan, status: 'open' };
-    this.transcript.push(item);
-    this.events.changed();
-    const answer = await waitFor<PlanAnswer | undefined>(signal, undefined, (resolve) => this.plans.set(item.id, resolve));
-    this.plans.delete(item.id);
-    if (!answer) {
-      item.status = 'cancelled';
-      this.events.changed();
-      throw new Error('The user did not respond to the plan.');
-    }
-    if (answer.approved) {
-      item.status = 'approved';
-      this.approvedPlan = plan;
-      item.approvedMode = answer.mode;
-      await ctx.setMode(answer.mode);
-    } else {
-      item.status = 'revise';
-      item.feedback = answer.feedback;
-    }
-    this.events.changed();
-    return answer;
   }
 
   private async ask(questions: AskUserQuestion[], signal: AbortSignal): Promise<string[][]> {
@@ -855,7 +835,7 @@ function waitFor<T>(signal: AbortSignal, onAbort: T, register: (resolve: (value:
 }
 
 function truncateLabel(text: string): string {
-  const one = text.replace(/s+/g, ' ').trim();
+  const one = text.replace(/\s+/g, ' ').trim();
   return one.length > 60 ? `${one.slice(0, 57)}…` : one;
 }
 

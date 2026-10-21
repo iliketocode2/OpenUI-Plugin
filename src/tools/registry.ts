@@ -1,41 +1,42 @@
 import type { AgentMode } from '../shared/protocol';
 import type { ToolDefinition } from '../owui/types';
-import { listDirTool, readFileTool } from './fs/read';
+import { readFileTool } from './fs/read';
 import { globTool, grepTool } from './fs/search';
 import { editFileTool, writeFileTool } from './fs/write';
-import { askUserTool, exitPlanModeTool, todoWriteTool, viewImageTool } from './interactive';
-import { browserInteractTool, browserTool } from './browser';
+import { askUserTool, todoWriteTool, viewImageTool } from './interactive';
+import { browserTool } from './browser';
 import { loadSkillTool, updateMemoryTool } from './knowledge';
 import { webFetchTool, webSearchTool } from './web';
-import { listProcessesTool, readProcessOutputTool, runCommandTool, startProcessTool, stopProcessTool } from './shell/tools';
-import type { Tool } from './types';
+import { processTool, runCommandTool, startProcessTool } from './shell/tools';
+import type { JsonSchema, Tool } from './types';
 
 export const ALL_TOOLS: Tool[] = [
   readFileTool,
-  listDirTool,
   globTool,
   grepTool,
   writeFileTool,
   editFileTool,
   runCommandTool,
   startProcessTool,
-  readProcessOutputTool,
-  stopProcessTool,
-  listProcessesTool,
+  processTool,
   viewImageTool,
   todoWriteTool,
   askUserTool,
-  exitPlanModeTool,
   loadSkillTool,
   updateMemoryTool,
   webSearchTool,
   webFetchTool,
   browserTool,
-  browserInteractTool,
 ] as unknown as Tool[];
 
 export const WEB_TOOLS = new Set(['web_search', 'web_fetch']);
-export const BROWSER_TOOLS = new Set(['browser', 'browser_interact']);
+export const BROWSER_TOOLS = new Set(['browser']);
+
+export interface ToolSelection {
+  vision: boolean;
+  hasSkills: boolean;
+  enabled(name: string): boolean;
+}
 
 export class ToolRegistry {
   private readonly byName = new Map<string, Tool>();
@@ -52,12 +53,30 @@ export class ToolRegistry {
     return [...this.byName.values()].filter((t) => !filter || filter(t));
   }
 
-  definitions(tools: Tool[]): ToolDefinition[] {
-    return tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters as Record<string, unknown> } }));
+  /** The tools offered to the model. Chosen once per session so the request prefix stays identical across turns. */
+  select(opts: ToolSelection): Tool[] {
+    return this.list((t) => {
+      if (t.name === 'view_image' && !opts.vision) return false;
+      if (t.name === 'load_skill' && !opts.hasSkills) return false;
+      return opts.enabled(t.name);
+    });
+  }
+
+  definitions(tools: Tool[], opts: { shells?: string[] } = {}): ToolDefinition[] {
+    return tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: withShells(t.parameters, opts.shells) as Record<string, unknown> } }));
   }
 }
 
-export function toolsForMode(tools: Tool[], mode: AgentMode): Tool[] {
-  if (mode === 'plan') return tools.filter((t) => t.category === 'read' || t.category === 'interactive');
-  return tools.filter((t) => t.name !== 'exit_plan_mode');
+/** Narrows a `shell` enum to the installed shells, and drops the parameter when there is no choice to make. */
+function withShells(schema: JsonSchema, shells: string[] | undefined): JsonSchema {
+  const shell = schema.properties?.shell;
+  if (!shells || !shell?.enum) return schema;
+  const { shell: _omit, ...rest } = schema.properties!;
+  if (shells.length < 2) return { ...schema, properties: rest };
+  return { ...schema, properties: { ...rest, shell: { ...shell, enum: shell.enum.filter((s) => shells.includes(String(s))) } } };
+}
+
+/** Plan mode is read-only: it allows reading, searching and questions, and refuses the rest when called. */
+export function allowedInMode(tool: Tool, mode: AgentMode): boolean {
+  return mode !== 'plan' || tool.category === 'read' || tool.category === 'interactive';
 }

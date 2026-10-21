@@ -23,14 +23,14 @@ import { resolveModel, type ResolvedModel, type ServerModel } from '../owui/mode
 import type { StreamDelta } from '../owui/streamAssembler';
 import { TokenCalibrator, type CalibrationState } from '../owui/tokens';
 import type { Usage } from '../owui/types';
-import type { AgentMode, ApprovalDecision, ConnectionView, HistoryEntry, ModelView, PlanAnswer, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState, WebStatusView } from '../shared/protocol';
+import type { AgentMode, ApprovalDecision, ConnectionView, HistoryEntry, ModelView, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState, WebStatusView } from '../shared/protocol';
 import { scratchRoot } from '../storage/scratchpad';
 import type { ToolRegistry } from '../tools/registry';
 import { ProcessManager } from '../tools/shell/processManager';
 import type { ShellRegistry } from '../tools/shell/shells';
 import type { PathGuard } from '../workspace/paths';
 import { AgentSession, type RunContext } from './session';
-import { MODE_TEXT, renderSystemPrompt } from './systemPrompt';
+import { renderSystemPrompt } from './systemPrompt';
 
 const STATE_NOTICE = 'owuiAgent.sovereigntyNoticeAcknowledged';
 const STATE_MODEL = 'owuiAgent.selectedModel';
@@ -160,7 +160,7 @@ export class AgentController implements vscode.Disposable {
     const model = id ? this.resolvedModels().find((m) => m.id === id) : this.selectedModel();
     if (!model) return;
     const max = model.maxContext;
-    const suggestion = model.contextSource === 'assumed' ? Math.min(16384, max ?? 16384) : model.contextSize;
+    const suggestion = model.contextSize;
     const value = await vscode.window.showInputBox({
       title: `Context size for ${model.name}`,
       prompt:
@@ -209,10 +209,6 @@ export class AgentController implements vscode.Disposable {
 
   approve(itemId: string, decision: ApprovalDecision): void {
     this.session.resolveApproval(itemId, decision);
-  }
-
-  planDecision(itemId: string, answer: PlanAnswer): void {
-    this.session.resolvePlan(itemId, answer);
   }
 
   async review(itemId: string, absolute: string | undefined, decision: 'keep' | 'revert'): Promise<void> {
@@ -571,7 +567,7 @@ export class AgentController implements vscode.Disposable {
     return {
       model,
       toolMode,
-      systemPrompt: (mode) =>
+      systemPrompt: () =>
         renderSystemPrompt({
           os: `${os.type()} ${os.release()} (${process.platform})`,
           shell: `${shell.label} (${shell.id})`,
@@ -579,7 +575,6 @@ export class AgentController implements vscode.Disposable {
           date: new Date().toISOString().slice(0, 10),
           workspace: folder ? folder.uri.fsPath : '(no folder open; work in the scratchpad)',
           scratchpad,
-          mode: MODE_TEXT[mode] ?? mode,
         }),
       calibrator: this.calibrator,
       mode: () => this.mode,
@@ -595,7 +590,6 @@ export class AgentController implements vscode.Disposable {
         if (!textModels.includes(model.id)) void this.deps.globalState.update(STATE_TEXT_MODE, [...textModels, model.id]);
       },
       addAllowlistEntry: (entry) => addAllowlistEntry(entry),
-      setMode: (mode) => this.setMode(mode),
       loadContext: async () => {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         const roots: { dir: string; source: 'workspace' | 'user' }[] = [];

@@ -84,7 +84,7 @@ describe('agent loop (native tool calls)', () => {
   it('stops the loop when the user denies without feedback', async () => {
     const t = await harness({ approve: () => ({ decision: 'deny' }) });
     mock.enqueue(
-      call('', { name: 'run_command', arguments: { command: 'git push', description: 'Push' } }, { name: 'list_dir', arguments: {} }),
+      call('', { name: 'run_command', arguments: { command: 'git push', description: 'Push' } }, { name: 'read_file', arguments: { path: '.' } }),
       say('should not be requested'),
     );
     await t.session.send('push it', t.ctx);
@@ -124,7 +124,7 @@ describe('agent loop (native tool calls)', () => {
 
   it('refuses to run the same call a third time in a row', async () => {
     const t = await harness();
-    const same = () => call('', { name: 'list_dir', arguments: {} });
+    const same = () => call('', { name: 'read_file', arguments: { path: '.' } });
     mock.enqueue(same(), same(), same(), say('giving up on that'));
     await t.session.send('go', t.ctx);
     expect(tools(t.session).map((c) => c.status)).toEqual(['done', 'done', 'error']);
@@ -134,7 +134,7 @@ describe('agent loop (native tool calls)', () => {
   it('pauses after maxIterations and resumes on continue', async () => {
     const t = await harness({ maxIterations: 2 });
     mock.enqueue(
-      call('', { name: 'list_dir', arguments: {} }),
+      call('', { name: 'read_file', arguments: { path: '.' } }),
       call('', { name: 'glob', arguments: { pattern: '*' } }),
       say('finished after continuing'),
     );
@@ -184,23 +184,23 @@ describe('agent loop (native tool calls)', () => {
     expect(t.session.busy).toBe(false);
   });
 
-  it('sends num_ctx only when the context size comes from the extension settings', async () => {
+  it('always sends num_ctx: the configured size, else the size Open WebUI reports', async () => {
     const t = await harness({ override: { contextSize: 16384 } });
     mock.enqueue(say('a'));
     await t.session.send('hi', t.ctx);
     expect(body(0).params).toEqual({ num_ctx: 16384 });
     await h?.cleanup();
-    const u = await harness();
+    const u = await harness({ contextSize: 24576 });
     mock.enqueue(say('b'));
     await u.session.send('hi', u.ctx);
-    expect(body(1).params).toBeUndefined();
+    expect(body(1).params).toEqual({ num_ctx: 24576 });
   });
 
   it('sends params.think=false when thinking is turned off for the model', async () => {
     const t = await harness({ override: { thinking: false } });
     mock.enqueue(say('fast answer'));
     await t.session.send('hi', t.ctx);
-    expect(body(0).params).toEqual({ think: false });
+    expect(body(0).params).toEqual({ think: false, num_ctx: 32768 });
   });
 
   it('shows an answer that arrived only as reasoning and never sends an empty assistant message', async () => {
@@ -251,7 +251,7 @@ describe('agent loop (text tool protocol)', () => {
     const t = await harness();
     mock.enqueue(
       { kind: 'json', status: 400, body: { detail: 'registry.ollama.ai/library/old-model does not support tools' } },
-      say('<agent_tool>{"name":"list_dir","arguments":{}}</agent_tool>'),
+      say('<agent_tool>{"name":"read_file","arguments":{"path":"."}}</agent_tool>'),
       say('listed'),
     );
     await t.session.send('list', t.ctx);

@@ -45,8 +45,8 @@ describe('browser tools in the agent loop', () => {
     h = await createHarness({ baseUrl: mock.baseUrl, apiKey: KEY, browser: true, mode: 'auto', vision: true, override: { vision: true } });
     mock.enqueue(
       call('browser', { action: 'navigate', url: appUrl }),
-      call('browser_interact', { action: 'type', selector: '#new', text: 'Ship phase e' }),
-      call('browser_interact', { action: 'click', selector: '#add' }),
+      call('browser', { action: 'type', selector: '#new', text: 'Ship phase e' }),
+      call('browser', { action: 'click', selector: '#add' }),
       call('browser', { action: 'read_text', selector: '#list' }),
       call('browser', { action: 'screenshot' }),
       say('The todo was added and the page renders.'),
@@ -54,8 +54,8 @@ describe('browser tools in the agent loop', () => {
     await h.session.send('check the app', h.ctx);
     expect(tools(h.session).map((t) => [t.tool, t.status])).toEqual([
       ['browser', 'done'],
-      ['browser_interact', 'done'],
-      ['browser_interact', 'done'],
+      ['browser', 'done'],
+      ['browser', 'done'],
       ['browser', 'done'],
       ['browser', 'done'],
     ]);
@@ -70,14 +70,16 @@ describe('browser tools in the agent loop', () => {
     expect(tools(h.session)[4]!.image).toMatch(/^data:image\/png;base64,/);
   }, 120_000);
 
-  it('refuses non-local pages and keeps interaction out of plan mode', async () => {
-    h = await createHarness({ baseUrl: mock.baseUrl, apiKey: KEY, browser: true, mode: 'plan' });
+  it('refuses non-local pages, and is refused in plan mode', async () => {
+    h = await createHarness({ baseUrl: mock.baseUrl, apiKey: KEY, browser: true, mode: 'auto' });
     mock.enqueue(call('browser', { action: 'navigate', url: 'https://example.com/' }), say('ok'));
     await h.session.send('look', h.ctx);
-    const names = body(0).tools!.map((t) => t.function.name);
-    expect(names).toContain('browser');
-    expect(names).not.toContain('browser_interact');
+    expect(body(0).tools!.map((t) => t.function.name)).toContain('browser');
     expect(String(body(1).messages.at(-1)!.content)).toMatch(/only opens local development servers/);
+    h.setMode('plan');
+    mock.enqueue(call('browser', { action: 'navigate', url: 'http://localhost:1/' }), say('ok'));
+    await h.session.send('look again', h.ctx);
+    expect(String(body(3).messages.at(-1)!.content)).toMatch(/not available in plan mode/);
   }, 60_000);
 
   it('is not offered when disabled', async () => {

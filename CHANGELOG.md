@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+Speed and context:
+
+- The system prompt and tool list are fixed for the whole session, so Ollama can reuse its prompt cache between steps. The task list now comes back in the `todo_write` result, the permission mode is noted at the start of your message when it changes, and `AGENTS.md`, memory and skills are read once per session (start a new session to pick up edits you make to them).
+- `num_ctx` is sent with every request. Without a configured size the extension uses 16384 (capped at the model's maximum) instead of assuming 4096, which made the first message fail.
+- Fewer, shorter tool definitions: about 6,000 characters for the default 11 tools, down from about 10,000 for 18. `list_dir` is merged into `read_file` (pass a directory), the three background-process tools are now one `process` tool, and `browser_interact` is merged into `browser`. `view_image` is only offered to vision models, `load_skill` only when skills exist, and the `shell` option only lists shells installed on this machine.
+- The browser tool is off by default.
+- Plan mode no longer has a separate plan-approval card or `exit_plan_mode` tool. The agent stays read-only, replies with its plan, and you switch mode when you want it implemented. Plans in older saved sessions show as ordinary replies.
+
 Security:
 
 - The command allowlist and the model, shell, checkpoint, skills, web and browser settings are now read from user settings only; values in a workspace's `.vscode/settings.json` are ignored. **Always allow** now saves to user settings. Entries you previously allowed in a workspace need to be added again.

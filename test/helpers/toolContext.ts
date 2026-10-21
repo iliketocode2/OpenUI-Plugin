@@ -63,7 +63,6 @@ export async function createToolEnv(
     ask: async (q) => opts.answers?.(q) ?? q.map(() => []),
     setTodos: (t) => todos.push(t),
     beforeWrite: async () => undefined,
-    presentPlan: async () => ({ approved: true, mode: 'ask' }),
     skills: [],
     workspaceDirCreated: (dir) => createdDirs.push(dir),
     browser: () => (browser ??= new BrowserSession({ profileDir: path.join(scratchpad, '.browser-profile'), channel: 'auto', allowExternal: false, extraHosts: [] })),

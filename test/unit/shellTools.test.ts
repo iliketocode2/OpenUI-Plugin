@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { listProcessesTool, readProcessOutputTool, runCommandTool, startProcessTool, stopProcessTool } from '../../src/tools/shell/tools';
+import { processTool, runCommandTool, startProcessTool } from '../../src/tools/shell/tools';
 import { availableShells, createToolEnv, type TestEnv } from '../helpers/toolContext';
 
 const node = JSON.stringify(process.execPath.replace(/\\/g, '/'));
@@ -94,11 +94,12 @@ describe('background processes', () => {
     const start = await env.run(startProcessTool, { command: `${node} server.js`, description: 'Start test server', wait_for: 'listening on \\d+' });
     expect(start.isError, start.content).toBeFalsy();
     expect(start.content).toMatch(/Process p1 is running \(output matched wait_for\)/);
-    const list = await env.run(listProcessesTool, {});
+    const list = await env.run(processTool, { action: 'list' });
     expect(list.content).toMatch(/p1\trunning/);
-    const more = await env.run(readProcessOutputTool, { id: 'p1', all: true });
+    const more = await env.run(processTool, { action: 'output', id: 'p1', all: true });
     expect(more.content).toMatch(/listening on/);
-    const stop = await env.run(stopProcessTool, { id: 'p1' });
+    expect((await env.run(processTool, { action: 'stop' })).content).toMatch(/id is required/);
+    const stop = await env.run(processTool, { action: 'stop', id: 'p1' });
     expect(stop.content).toBe('Stopped process p1.');
     expect(env.processes.get('p1')?.exitCode).not.toBeUndefined();
   });

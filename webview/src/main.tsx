@@ -5,7 +5,7 @@ import type { AgentMode, HistoryEntry, ToWebview, ToolCardUpdate, TranscriptItem
 import { post, vscode } from './api';
 import { renderMarkdown } from './markdown';
 import { HistoryPanel } from './History';
-import { PlanCard, ReviewCard, RewindControl } from './PlanReview';
+import { ReviewCard, RewindControl } from './Review';
 import { QuestionCard, TodoPanel } from './Question';
 import { ToolCard } from './ToolCard';
 
@@ -187,24 +187,22 @@ function formatTokens(n: number): string {
 function ContextMeter({ state }: { state: ViewState }) {
   const u = state.usage;
   if (!u) return null;
-  const assumed = u.contextSource === 'assumed';
   const pct = Math.min(100, Math.round((u.promptTokens / u.contextSize) * 100));
   const model = state.models.find((m) => m.id === state.selectedModel);
   const max = model?.maxContext ? ` The model supports up to ${model.maxContext.toLocaleString()}.` : '';
   const title =
     `${u.estimated ? 'About ' : ''}${u.promptTokens} of ${u.contextSize} tokens used (${pct}%). ` +
-    (assumed
-      ? `Open WebUI does not report the context size this model runs with, so 4096 is assumed.${max} Click to set it; the value is also sent to Ollama as num_ctx.`
+    (u.contextSource === 'default'
+      ? `Default context size, sent to Ollama as num_ctx.${max} Click to change it.`
       : u.contextSource === 'server'
-        ? `Context size from the model's parameters in Open WebUI.${max} Click to override it.`
-        : `Context size you set for this model (also sent to Ollama as num_ctx).${max} Click to change it.`);
+        ? `Context size from the model's parameters in Open WebUI, sent to Ollama as num_ctx.${max} Click to override it.`
+        : `Context size you set for this model, sent to Ollama as num_ctx.${max} Click to change it.`);
   return (
-    <button class={`context ${assumed ? 'context-assumed' : ''}`} title={title} aria-label={`Context: ${title}`} disabled={!model} onClick={() => model && post({ type: 'setContextSize', id: model.id })}>
+    <button class="context" title={title} aria-label={`Context: ${title}`} disabled={!model} onClick={() => model && post({ type: 'setContextSize', id: model.id })}>
       <meter min={0} max={u.contextSize} low={u.contextSize * 0.6} high={u.contextSize * 0.8} optimum={0} value={u.promptTokens} aria-hidden="true" />
       <span class="context-label">
         {u.estimated ? '~' : ''}
         {formatTokens(u.promptTokens)} / {formatTokens(u.contextSize)}
-        {assumed ? '? Set' : ''}
       </span>
     </button>
   );
@@ -308,8 +306,6 @@ function Item({ item, busy }: { item: TranscriptItem; busy: boolean }) {
       return <ToolCard item={item} />;
     case 'question':
       return <QuestionCard item={item} />;
-    case 'plan':
-      return <PlanCard item={item} />;
     case 'review':
       return <ReviewCard item={item} />;
     case 'error':
@@ -386,7 +382,7 @@ function AssistantItem({ item }: { item: Extract<TranscriptItem, { kind: 'assist
 }
 
 const MODES: { id: AgentMode; label: string; hint: string }[] = [
-  { id: 'plan', label: 'Plan', hint: 'Read-only: the agent investigates, asks questions and writes a plan for you to approve before it changes anything.' },
+  { id: 'plan', label: 'Plan', hint: 'Read-only: the agent investigates, asks questions and replies with a plan. Switch mode when you want it implemented.' },
   { id: 'ask', label: 'Ask before edits', hint: 'Every file change and every command that is not allow-listed asks for approval.' },
   { id: 'auto', label: 'Auto-accept edits', hint: 'File changes inside the workspace apply immediately. Commands still ask unless allow-listed.' },
   { id: 'review', label: 'Auto-accept, review at end', hint: 'File changes apply immediately; when the agent finishes you keep or revert each changed file. Commands still ask unless allow-listed.' },

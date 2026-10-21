@@ -7,7 +7,7 @@ import { ShadowGit } from '../../src/checkpoints/shadowGit';
 import { DiffStore } from '../../src/diff/diffStore';
 import { loadProjectContext } from '../../src/memory/projectMemory';
 import { discoverSkills } from '../../src/skills/discovery';
-import { MODE_TEXT, renderSystemPrompt } from '../../src/agent/systemPrompt';
+import { renderSystemPrompt } from '../../src/agent/systemPrompt';
 import { BrowserSession } from '../../src/browser/session';
 import { Egress } from '../../src/net/egress';
 import { OwuiWeb } from '../../src/owui/web';
@@ -15,7 +15,7 @@ import { BROWSER_TOOLS, WEB_TOOLS } from '../../src/tools/registry';
 import { OwuiClient } from '../../src/owui/client';
 import { resolveModel, type ModelOverride } from '../../src/owui/models';
 import { TokenCalibrator } from '../../src/owui/tokens';
-import type { AgentMode, ApprovalDecision, AskUserQuestion, PlanAnswer, TranscriptItem } from '../../src/shared/protocol';
+import type { AgentMode, ApprovalDecision, AskUserQuestion, TranscriptItem } from '../../src/shared/protocol';
 import { ToolRegistry } from '../../src/tools/registry';
 import { ProcessManager } from '../../src/tools/shell/processManager';
 import { ShellRegistry } from '../../src/tools/shell/shells';
@@ -42,7 +42,6 @@ export interface HarnessOptions {
   autoApproveSearches?: boolean;
   browser?: boolean;
   checkpoints?: boolean;
-  plan?: (plan: string) => PlanAnswer | undefined;
   contextSize?: number;
   userSkillsDir?: string;
 }
@@ -112,10 +111,6 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
             approvalsSeen.push(structuredClone(item));
             const decision = opts.approve ? opts.approve(item) : { decision: 'allow' as const };
             if (decision) queueMicrotask(() => session.resolveApproval(item.id, decision));
-          } else if (item.kind === 'plan' && item.status === 'open') {
-            handled.add(item.id);
-            const answer = opts.plan?.(item.plan);
-            if (answer) queueMicrotask(() => session.resolvePlan(item.id, answer));
           } else if (item.kind === 'question' && item.status === 'open') {
             handled.add(item.id);
             const answers = opts.answer?.(item.questions);
@@ -132,8 +127,7 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
   const ctx: RunContext = {
     model,
     toolMode: model.toolMode === 'text' ? 'text' : 'native',
-    systemPrompt: (m) =>
-      renderSystemPrompt({ os: 'test', shell: 'default', shells: shells.available().map((s) => s.id).join(', '), date: '2026-10-14', workspace, scratchpad, mode: MODE_TEXT[m] ?? m }),
+    systemPrompt: () => renderSystemPrompt({ os: 'test', shell: 'default', shells: shells.available().map((s) => s.id).join(', '), date: '2026-10-14', workspace, scratchpad }),
     calibrator: new TokenCalibrator(),
     mode: () => mode,
     allowlist: () => allowlist,
@@ -145,10 +139,6 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
     },
     addAllowlistEntry: async (e) => {
       allowlist.push(e);
-    },
-    setMode: async (m) => {
-      mode = m;
-      modeHistory.push(m);
     },
     loadContext: async () => {
       const roots: { dir: string; source: 'workspace' | 'user' }[] = [{ dir: path.join(workspace, '.owui', 'skills'), source: 'workspace' }];
@@ -175,7 +165,10 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
     modeHistory,
     diffs,
     createdDirs,
-    setMode: (m: AgentMode) => (mode = m),
+    setMode: (m: AgentMode) => {
+      mode = m;
+      modeHistory.push(m);
+    },
     async cleanup() {
       await session.dispose();
       await rm(workspace, { recursive: true, force: true }).catch(() => undefined);

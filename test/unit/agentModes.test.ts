@@ -36,36 +36,35 @@ const call = (content: string, ...calls: { name: string; arguments: object }[]) 
 const read = (t: Harness, f: string) => readFile(path.join(t.workspace, f), 'utf8');
 
 describe('plan mode', () => {
-  it('offers only read-only tools plus exit_plan_mode and refuses edits', async () => {
-    const t = await harness({ mode: 'plan', plan: () => ({ approved: false, feedback: 'Use SQLite instead' }) });
-    mock.enqueue(
-      call('Trying to write.', { name: 'write_file', arguments: { path: 'x.txt', content: 'x' } }),
-      call('Here is my plan.', { name: 'exit_plan_mode', arguments: { plan: '# Plan\n1. Use Postgres' } }),
-      say('I will revise the plan.'),
-    );
+  it('offers the same tools as other modes but refuses edits, and announces the mode in the user message', async () => {
+    const t = await harness({ mode: 'plan' });
+    mock.enqueue(call('Trying to write.', { name: 'write_file', arguments: { path: 'x.txt', content: 'x' } }), say('Plan:\n1. Use Postgres'));
     await t.session.send('plan a todo app', t.ctx);
-    expect(toolNames(0)).toEqual(expect.arrayContaining(['exit_plan_mode', 'read_file', 'grep', 'ask_user', 'todo_write']));
-    expect(toolNames(0)).not.toContain('write_file');
-    expect(toolNames(0)).not.toContain('run_command');
-    expect(String(body(0).messages[0]!.content)).toContain('PLAN MODE');
+    expect(toolNames(0)).toEqual(expect.arrayContaining(['read_file', 'grep', 'ask_user', 'todo_write', 'write_file', 'run_command']));
+    expect(toolNames(0)).not.toContain('exit_plan_mode');
+    expect(String(body(0).messages[0]!.content)).not.toContain('read-only');
+    expect(String(body(0).messages.at(-1)!.content)).toMatch(/^\[Permission mode: plan \(read-only\)/);
     expect(String(body(1).messages.at(-1)!.content)).toMatch(/not available in plan mode/);
-    expect(String(body(2).messages.at(-1)!.content)).toMatch(/wants changes to the plan: Use SQLite instead/);
-    expect(t.session.transcript.find((x) => x.kind === 'plan')).toMatchObject({ status: 'revise', feedback: 'Use SQLite instead' });
-    expect(t.modeHistory).toEqual([]);
+    await expect(read(t, 'x.txt')).rejects.toThrow();
   });
 
-  it('switches to the chosen mode on approval and continues with editing tools', async () => {
-    const t = await harness({ mode: 'plan', plan: () => ({ approved: true, mode: 'auto' }) });
-    mock.enqueue(
-      call('', { name: 'exit_plan_mode', arguments: { plan: '# Plan\nWrite x.txt' } }),
-      call('Implementing.', { name: 'write_file', arguments: { path: 'x.txt', content: 'x' } }),
-      say('Done.'),
-    );
-    await t.session.send('plan then build', t.ctx);
-    expect(t.modeHistory).toEqual(['auto']);
-    expect(String(body(1).messages.at(-1)!.content)).toMatch(/approved the plan/);
-    expect(toolNames(1)).toContain('write_file');
-    expect(toolNames(1)).not.toContain('exit_plan_mode');
+  it('keeps the system prompt and tools byte-identical across turns, mode changes and task-list updates', async () => {
+    const t = await harness({ mode: 'plan' });
+    mock.enqueue(call('', { name: 'todo_write', arguments: { todos: [{ content: 'Write x', status: 'in_progress' }] } }), say('Plan: write x.txt'));
+    await t.session.send('plan it', t.ctx);
+    t.setMode('auto');
+    mock.enqueue(call('Implementing.', { name: 'write_file', arguments: { path: 'x.txt', content: 'x' } }), say('Done.'));
+    await t.session.send('go ahead', t.ctx);
+    const requests = mock.chatRequests().length;
+    expect(requests).toBe(4);
+    for (let i = 1; i < requests; i++) {
+      expect(body(i).messages[0], `system message of request ${i}`).toEqual(body(0).messages[0]);
+      expect(body(i).tools, `tools of request ${i}`).toEqual(body(0).tools);
+    }
+    expect(String(body(1).messages.at(-1)!.content)).toContain('- [~] Write x');
+    const goAhead = body(2).messages.find((m) => m.role === 'user' && String(m.content).includes('go ahead'));
+    expect(String(goAhead?.content)).toMatch(/^\[Permission mode: auto-accept edits/);
+    expect(body(3).messages.filter((m) => m.role === 'user' && String(m.content).startsWith('[Permission mode:'))).toHaveLength(2);
     expect(t.approvalsSeen).toEqual([]);
     expect(await read(t, 'x.txt')).toBe('x');
   });
