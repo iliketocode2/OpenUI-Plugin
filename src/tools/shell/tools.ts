@@ -51,7 +51,7 @@ export const runCommandTool: Tool<RunArgs> = {
     const cwd = ctx.paths.resolve(args.cwd ?? '.');
     return {
       access: { kind: 'command', command: args.command, cwd, background: false },
-      card: { title: args.description || args.command, description: args.description, input: args.command },
+      card: { title: args.description || args.command, input: args.command },
       execute: () => runCommand(args, shell, cwd.absolute, ctx),
     };
   },
@@ -150,7 +150,7 @@ export const startProcessTool: Tool<StartArgs> = {
     const cwd = ctx.paths.resolve(args.cwd ?? '.');
     return {
       access: { kind: 'command', command: args.command, cwd, background: true },
-      card: { title: `${args.description || args.command} (background)`, description: args.description, input: args.command },
+      card: { title: `${args.description || args.command} (background)`, input: args.command },
       async execute() {
         const proc = ctx.processes.start(shell, args.command, cwd.absolute, args.description);
         let status = 'started';
@@ -163,7 +163,7 @@ export const startProcessTool: Tool<StartArgs> = {
           await new Promise((r) => setTimeout(r, 1500));
         }
         const out = truncateMiddle(proc.output.sinceLastRead(), ctx.settings.maxOutputChars);
-        ctx.update({ output: out.text.slice(-DISPLAY_CHARS), summary: `id ${proc.id}` });
+        ctx.update({ output: out.text.slice(-DISPLAY_CHARS) });
         const exited = proc.exitCode !== undefined;
         const head = exited
           ? `Process ${proc.id} exited with code ${proc.exitCode}.`

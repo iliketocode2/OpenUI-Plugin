@@ -1,5 +1,4 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
-import * as path from 'node:path';
 import { fail, ok, type Tool, type ToolContext, type ToolResult } from '../types';
 
 const DEFAULT_LIMIT = 2000;
@@ -91,8 +90,4 @@ async function listDirectory(absolute: string, display: string, ctx: ToolContext
   ctx.update({ title: `List ${display} — ${rows.length} entries` });
   const extra = rows.length > shown.length ? `\n[${rows.length - shown.length} more entries not shown]` : '';
   return ok(shown.length ? `${shown.join('\n')}${extra}` : '(empty directory)');
-}
-
-export function relativeTo(root: string, abs: string): string {
-  return path.relative(root, abs).split(path.sep).join('/');
 }

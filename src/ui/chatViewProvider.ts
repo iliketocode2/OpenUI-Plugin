@@ -59,10 +59,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     );
   }
 
-  focusInput(): void {
-    this.post({ type: 'focusInput' });
-  }
-
   async showHistory(): Promise<void> {
     if (!this.view) await vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
     this.view?.show(true);
@@ -117,9 +113,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         return;
       case 'setMode':
         await this.controller.setMode(m.mode);
-        return;
-      case 'newSession':
-        this.controller.newSession();
         return;
       case 'setApiKey':
         await this.commands.setApiKey();

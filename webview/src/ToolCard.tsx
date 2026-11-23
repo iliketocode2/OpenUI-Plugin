@@ -31,7 +31,7 @@ export function ToolCard({ item }: { item: ToolItem }) {
     }
   }, [item.status, item.input]);
   const s = STATUS[item.status];
-  const hasBody = !!(item.input || item.output || item.diff || item.image || item.description || item.approval);
+  const hasBody = !!(item.input || item.output || item.diff || item.image || item.approval);
   return (
     <div class={`tool tool-${item.status}`}>
       <button class="tool-head" aria-expanded={hasBody ? open : undefined} onClick={() => hasBody && setOpen(!open)} disabled={!hasBody}>

@@ -37,7 +37,7 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   profileRoot = await mkdtemp(path.join(tmpdir(), 'owui browser '));
-  session = new BrowserSession({ profileDir: path.join(profileRoot, 'profile'), channel: 'auto', allowExternal: false, extraHosts: [] });
+  session = new BrowserSession({ profileDir: path.join(profileRoot, 'profile'), channel: 'auto', extraHosts: [] });
 }, 60_000);
 
 afterAll(async () => {

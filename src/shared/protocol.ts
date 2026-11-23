@@ -41,18 +41,16 @@ export interface ApprovalDecision {
 export interface WebStatusView {
   enabled: boolean;
   engine?: string;
-  verification: 'verified' | 'confirmed' | 'unverified' | 'other-engine' | 'disabled-on-server' | 'unavailable';
+  verification: 'verified' | 'unverified' | 'other-engine' | 'disabled-on-server' | 'unavailable';
   detail?: string;
 }
 
 export interface ToolCardUpdate {
   title?: string;
   status?: ToolStatus;
-  description?: string;
   input?: string;
   output?: string;
   diff?: string;
-  summary?: string;
   image?: string;
   exitCode?: number | null;
   diffId?: string;
@@ -138,7 +136,7 @@ export type ToWebview =
   | { type: 'insertText'; text: string }
   | { type: 'history'; entries: HistoryEntry[]; query: string }
   | { type: 'showHistory' }
-  | { type: 'focusInput' };
+;
 
 export type FromWebview =
   | { type: 'ready' }
@@ -149,7 +147,6 @@ export type FromWebview =
   | { type: 'setModelThinking'; id: string; thinking: boolean }
   | { type: 'setContextSize'; id: string }
   | { type: 'setMode'; mode: AgentMode }
-  | { type: 'newSession' }
   | { type: 'setApiKey' }
   | { type: 'openSettings' }
   | { type: 'refreshModels' }

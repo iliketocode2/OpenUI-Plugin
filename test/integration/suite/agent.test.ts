@@ -93,7 +93,7 @@ describe('OWUI Agent tools and agent loop (integration)', () => {
     assert.match(cards[3]!.output ?? '', /FAIL: expected 5, got -1/);
     assert.match(cards[5]!.output ?? '', /PASS/);
     assert.equal(cards[5]!.input, `${node} lib/sum.test.js`);
-    assert.equal(cards[5]!.description, 'Re-run the sum test');
+    assert.equal(cards[5]!.title, 'Re-run the sum test');
     assert.equal(await readFile(path.join(ws, 'lib', 'sum.js'), 'utf8'), 'module.exports = (a, b) => a + b;\n');
     assert.deepEqual(state.todos.map((t) => t.content), ['Write sum', 'Test']);
     assert.equal(state.busy, false);

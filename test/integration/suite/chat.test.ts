@@ -38,7 +38,7 @@ describe('OWUI Agent chat (integration)', () => {
     const exported = await ext.activate();
     assert.ok(exported, 'test API is only exported in test mode');
     api = exported;
-    await configure({ baseUrl: mock.baseUrl, models: {}, 'request.maxRetries': 1 });
+    await configure({ baseUrl: mock.baseUrl, models: {} });
     await api.keys.set(KEY);
     await api.controller.refresh();
   });

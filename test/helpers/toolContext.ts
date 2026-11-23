@@ -69,7 +69,7 @@ export async function createToolEnv(
     beforeWrite: async () => undefined,
     skills: [],
     workspaceDirCreated: (dir) => createdDirs.push(dir),
-    browser: () => (browser ??= new BrowserSession({ profileDir: path.join(scratchpad, '.browser-profile'), channel: 'auto', allowExternal: false, extraHosts: [] })),
+    browser: () => (browser ??= new BrowserSession({ profileDir: path.join(scratchpad, '.browser-profile'), channel: 'auto', extraHosts: [] })),
     web: new OwuiWeb(new Egress(() => opts.baseUrl ?? 'http://127.0.0.1:9'), async () => opts.apiKey ?? 'sk-test'),
   };
   return {

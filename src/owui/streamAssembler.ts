@@ -54,7 +54,6 @@ export class StreamAssembler {
   private finishReason: string | null = null;
   private usage: Usage | null = null;
   private readonly splitter = new ThinkTagSplitter();
-  private sawStructuredReasoning = false;
 
   pushChunk(chunk: unknown): StreamDelta[] {
     if (!isObject(chunk)) return [];
@@ -73,7 +72,6 @@ export class StreamAssembler {
       for (const field of REASONING_FIELDS) {
         const r = delta[field];
         if (typeof r === 'string' && r) {
-          this.sawStructuredReasoning = true;
           this.reasoning += r;
           out.push({ kind: 'reasoning', text: r });
         }
@@ -99,14 +97,6 @@ export class StreamAssembler {
 
   flushPending(): StreamDelta[] {
     return this.splitter.flush().map((p) => this.applyPiece(p));
-  }
-
-  hasOutput(): boolean {
-    return this.content.length > 0 || this.reasoning.length > 0 || this.calls.size > 0;
-  }
-
-  usesStructuredReasoning(): boolean {
-    return this.sawStructuredReasoning;
   }
 
   private applyPiece(piece: { kind: 'content' | 'reasoning'; text: string }): StreamDelta {

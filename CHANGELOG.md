@@ -6,6 +6,15 @@ Tool calling:
 
 - The text-based tool protocol and the automatic fallback to it are gone, along with the per-model `toolMode` setting. The agent uses native tool calling only; a model whose server rejects tools now gets a clear error instead of a silent switch. The fallback could run a tool call the model had only shown as an example inside a code fence, and an unrelated error that mentioned "tool calling" switched the rest of the run to text mode.
 
+Settings:
+
+- Five settings are gone. VS Code ignores them if they are still in your settings file.
+  - `owuiAgent.defaultModel`: the model you pick is remembered; the first model is used until you pick one.
+  - `owuiAgent.request.maxRetries`: always 3.
+  - `owuiAgent.scratchpad.retentionDays`: always 7 days.
+  - `owuiAgent.web.confirmedEngine`: it only changed the wording of the web badge. When the engine cannot be read, check Admin Panel → Settings → Web Search yourself.
+  - `owuiAgent.browser.allowExternalRequests`: pages opened by the browser tool can no longer load internet resources at all.
+
 Conversation:
 
 - When you rewind only the code, or revert files during review, the model now learns about it at the start of your next message. Before, the extension added a made-up exchange to the conversation, including a reply the model never wrote ("Understood…", "Noted."). The note is saved with the session, so it also survives a reload.

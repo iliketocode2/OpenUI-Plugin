@@ -3,28 +3,23 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { ModelOverride } from '../owui/models';
 
-export const SECTION = 'owuiAgent';
+const SECTION = 'owuiAgent';
 
 export interface Settings {
   baseUrl: string;
-  defaultModel: string;
   models: Record<string, ModelOverride>;
   stallTimeoutSeconds: number;
   firstResponseTimeoutSeconds: number;
-  maxRetries: number;
   windowsShell: string;
   posixShell: string;
   commandTimeoutSeconds: number;
   commandAllowlist: string[];
   maxIterations: number;
-  scratchpadRetentionDays: number;
   userSkillsDir: string;
   webEnabled: boolean;
   webAutoApproveSearches: boolean;
-  webConfirmedEngine: string;
   browserEnabled: boolean;
   browserChannel: 'auto' | 'chrome' | 'msedge';
-  browserAllowExternal: boolean;
   browserExtraHosts: string[];
 }
 
@@ -32,23 +27,18 @@ export function readSettings(): Settings {
   const c = vscode.workspace.getConfiguration(SECTION);
   return {
     baseUrl: c.get<string>('baseUrl', 'http://localhost:3000'),
-    defaultModel: c.get<string>('defaultModel', ''),
     models: c.get<Record<string, ModelOverride>>('models', {}),
     stallTimeoutSeconds: c.get<number>('request.stallTimeoutSeconds', 300),
     firstResponseTimeoutSeconds: c.get<number>('request.firstResponseTimeoutSeconds', 1200),
-    maxRetries: c.get<number>('request.maxRetries', 3),
     windowsShell: c.get<string>('shell.windows', 'auto'),
     posixShell: c.get<string>('shell.posix', 'auto'),
     commandTimeoutSeconds: c.get<number>('commands.timeoutSeconds', 120),
     commandAllowlist: c.get<string[]>('commands.allowlist', []),
     maxIterations: c.get<number>('agent.maxIterations', 50),
-    scratchpadRetentionDays: c.get<number>('scratchpad.retentionDays', 7),
     webEnabled: c.get<boolean>('web.enabled', false),
     webAutoApproveSearches: c.get<boolean>('web.autoApproveSearches', false),
-    webConfirmedEngine: c.get<string>('web.confirmedEngine', ''),
     browserEnabled: c.get<boolean>('browser.enabled', false),
     browserChannel: c.get<'auto' | 'chrome' | 'msedge'>('browser.channel', 'auto'),
-    browserAllowExternal: c.get<boolean>('browser.allowExternalRequests', false),
     browserExtraHosts: c.get<string[]>('browser.extraHosts', []),
     userSkillsDir: expandHome(c.get<string>('skills.userDir', '') || path.join(os.homedir(), '.owui-agent', 'skills')),
   };

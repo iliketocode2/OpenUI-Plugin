@@ -96,13 +96,6 @@ export function isPrepared(v: Prepared | ToolResult): v is Prepared {
   return typeof (v as Prepared).execute === 'function';
 }
 
-export class ToolError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ToolError';
-  }
-}
-
 export function ok(content: string, extra: Partial<ToolResult> = {}): ToolResult {
   return { content, ...extra };
 }

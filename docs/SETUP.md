@@ -132,7 +132,7 @@ Notes:
 
 1. From the Open WebUI container: `docker exec -it open-webui curl "http://searxng:8080/search?q=test&format=json"` should print JSON.
 2. **Admin Panel → Settings → Web Search**: web search on, engine **searxng**, the query URL above. Save.
-3. In VS Code, set `owuiAgent.web.enabled` to `true`. The chat header shows **Web: SearXNG ✓** when the extension could verify the engine (admin key with access to `/api/v1/retrieval/config`). If it shows **Web: unverified**, set `owuiAgent.web.confirmedEngine` to `searxng` once you have checked the admin panel yourself.
+3. In VS Code, set `owuiAgent.web.enabled` to `true`. The chat header shows **Web: SearXNG ✓** when the extension could verify the engine (admin key with access to `/api/v1/retrieval/config`). If it shows **Web: unverified**, the API key cannot read the search configuration; check Admin Panel → Settings → Web Search yourself.
 
 Search queries still leave your infrastructure through SearXNG to the search engines it queries. The agent is instructed to keep queries generic, refuses queries that look like they contain secrets, and treats everything it reads from the web as untrusted data.
 

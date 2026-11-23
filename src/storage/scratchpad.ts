@@ -1,17 +1,14 @@
-import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { readdir, rm, stat } from 'node:fs/promises';
 import * as path from 'node:path';
 
 export function scratchRoot(globalStorage: string): string {
   return path.join(globalStorage, 'scratch');
 }
 
-export async function createScratchpad(globalStorage: string, sessionId: string): Promise<string> {
-  const dir = path.join(scratchRoot(globalStorage), `${new Date().toISOString().slice(0, 10)}-${sessionId.slice(0, 8)}`);
-  await mkdir(dir, { recursive: true });
-  return dir;
-}
+/** Scratchpad folders unused for this long are deleted at startup. */
+const RETENTION_DAYS = 7;
 
-export async function pruneScratchpads(globalStorage: string, retentionDays: number, keep: string[] = []): Promise<number> {
+export async function pruneScratchpads(globalStorage: string, keep: string[] = []): Promise<number> {
   const root = scratchRoot(globalStorage);
   let entries: string[];
   try {
@@ -19,7 +16,7 @@ export async function pruneScratchpads(globalStorage: string, retentionDays: num
   } catch {
     return 0;
   }
-  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
   let removed = 0;
   for (const name of entries) {
     const dir = path.join(root, name);

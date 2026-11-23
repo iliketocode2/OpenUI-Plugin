@@ -50,7 +50,7 @@ export const writeFileTool: Tool<WriteArgs> = {
     const title = before === undefined ? `Write ${target.display} — ${plural(lines, 'line')}` : `Write ${target.display} — ${changeSummary(diff)}`;
     return {
       access: { kind: 'write', paths: [target] },
-      card: { title, diff: diff.unified, summary: before === undefined ? 'New file' : changeSummary(diff) },
+      card: { title, diff: diff.unified },
       preview: { absolute: target.absolute, display: target.display, before: before ?? '', after: content },
       async execute() {
         await ctx.beforeWrite(target.absolute);

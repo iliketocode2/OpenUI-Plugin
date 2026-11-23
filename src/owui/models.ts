@@ -3,7 +3,6 @@ export interface ServerModel {
   name: string;
   ownedBy?: string;
   vision?: boolean;
-  usageCapability?: boolean;
   contextSize?: number;
   maxContext?: number;
 }
@@ -25,7 +24,6 @@ export interface ResolvedModel {
   contextSource: ContextSource;
   local: boolean;
   thinking?: boolean;
-  usageCapability?: boolean;
   maxContext?: number;
 }
 
@@ -59,7 +57,6 @@ export function parseModelList(body: unknown): ServerModel[] {
     const model: ServerModel = { id: m.id, name: typeof m.name === 'string' && m.name ? m.name : m.id };
     if (typeof m.owned_by === 'string') model.ownedBy = m.owned_by;
     if (typeof caps?.vision === 'boolean') model.vision = caps.vision;
-    if (typeof caps?.usage === 'boolean') model.usageCapability = caps.usage;
     const ctx = positiveInt(params?.num_ctx) ?? positiveInt(options?.num_ctx);
     if (ctx) model.contextSize = ctx;
     const details = obj(obj(m.ollama)?.details);
@@ -88,7 +85,6 @@ export function resolveModel(server: ServerModel, override: ModelOverride | unde
     contextSource,
     local: override?.local ?? false,
   };
-  if (server.usageCapability !== undefined) resolved.usageCapability = server.usageCapability;
   if (server.maxContext) resolved.maxContext = server.maxContext;
   if (override?.thinking !== undefined) resolved.thinking = override.thinking;
   return resolved;

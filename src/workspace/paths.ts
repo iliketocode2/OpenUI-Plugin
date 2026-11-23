@@ -46,10 +46,6 @@ export class PathGuard {
 
   private readonly windows: boolean;
 
-  workspaceRoots(): string[] {
-    return this.roots();
-  }
-
   primaryRoot(): string | undefined {
     return this.roots()[0];
   }

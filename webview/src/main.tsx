@@ -40,7 +40,6 @@ function App() {
     const onMessage = (e: MessageEvent<ToWebview>) => {
       const msg = e.data;
       if (msg.type === 'state' || msg.type === 'delta' || msg.type === 'toolUpdate') dispatch(msg);
-      else if (msg.type === 'focusInput') inputRef.current?.focus();
       else if (msg.type === 'insertText') insertRef.current(msg.text);
       else if (msg.type === 'showHistory') setHistory((h) => ({ ...h, open: true }));
       else if (msg.type === 'history') setHistory((h) => ({ ...h, entries: msg.entries, query: msg.query }));
@@ -163,7 +162,6 @@ function Sovereignty({ level }: { level: ViewState['sovereignty'] }) {
 
 const WEB_LABEL: Record<ViewState['web']['verification'], { text: (engine?: string) => string; ok: boolean; hint: string }> = {
   verified: { text: () => 'Web: SearXNG ✓', ok: true, hint: 'Web search is on and Open WebUI reports a SearXNG engine. Queries still reach the internet through it; each one is shown to you first.' },
-  confirmed: { text: () => 'Web: SearXNG', ok: true, hint: 'Web search is on. You confirmed in settings that Open WebUI uses SearXNG; the extension could not check it.' },
   unverified: { text: () => 'Web: unverified', ok: false, hint: 'Web search is on, but the search engine Open WebUI uses could not be checked.' },
   'other-engine': { text: (e) => `Web: ${e ?? 'third-party'}`, ok: false, hint: 'Open WebUI sends web searches to a third-party engine.' },
   'disabled-on-server': { text: () => 'Web: off in Open WebUI', ok: false, hint: 'Web search is turned off in Open WebUI.' },

@@ -93,7 +93,7 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
       checkpoints: new CheckpointManager(path.join(scratchpad, '.backups')),
       diffs,
       web: new OwuiWeb(egress, async () => opts.apiKey),
-      browser: () => (browser ??= new BrowserSession({ profileDir: path.join(scratchpad, '.browser-profile'), channel: 'auto', allowExternal: false, extraHosts: [] })),
+      browser: () => (browser ??= new BrowserSession({ profileDir: path.join(scratchpad, '.browser-profile'), channel: 'auto', extraHosts: [] })),
       closeBrowser: async () => {
         await browser?.close();
         browser = undefined;

@@ -20,6 +20,9 @@ import { DIFF_SCHEME, DiffContentProvider } from './ui/diffView';
 import { PathGuard } from './workspace/paths';
 import { locateRipgrep } from './workspace/ripgrep';
 
+
+/** Retries for dropped or refused connections and HTTP 408, 429, 502, 503 and 504. */
+const MAX_RETRIES = 3;
 export interface TestApi {
   controller: AgentController;
   keys: ApiKeyStore;
@@ -43,7 +46,7 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
   const client = new OwuiClient(egress, () => keys.get(), {
     stallTimeoutMs: () => readSettings().stallTimeoutSeconds * 1000,
     firstResponseTimeoutMs: () => readSettings().firstResponseTimeoutSeconds * 1000,
-    maxRetries: () => readSettings().maxRetries,
+    maxRetries: () => MAX_RETRIES,
   });
   let confirmImpl = async (message: string, detail: string, action: string) => (await vscode.window.showWarningMessage(message, { modal: true, detail }, action)) === action;
   const workspaceRoots = () => (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
@@ -117,7 +120,7 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
   void controller.pruneOrphanBackups();
   // Versions up to 0.1.0 kept a shadow Git repository of the workspace here; it is no longer used.
   if (context.storageUri) void rm(path.join(context.storageUri.fsPath, 'checkpoints'), { recursive: true, force: true }).catch(() => undefined);
-  void pruneScratchpads(globalStorage, readSettings().scratchpadRetentionDays, [controller.currentSession.scratchpad]);
+  void pruneScratchpads(globalStorage, [controller.currentSession.scratchpad]);
   return context.extensionMode === vscode.ExtensionMode.Test
     ? {
         controller,

@@ -79,7 +79,6 @@ export class AgentController implements vscode.Disposable {
   private session: AgentSession;
   private listener: ControllerListener | undefined;
   private refreshSeq = 0;
-  private readonly idle = new Set<() => void>();
   readonly diffs = new DiffStore();
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> = Promise.resolve();
@@ -272,14 +271,12 @@ export class AgentController implements vscode.Disposable {
     const ctx = this.runContext();
     if (!ctx) return;
     await this.session.send(text, ctx);
-    this.notifyIdle();
   }
 
   async resume(): Promise<void> {
     const ctx = this.runContext();
     if (!ctx) return;
     await this.session.resume(ctx);
-    this.notifyIdle();
   }
 
   async compact(): Promise<void> {
@@ -425,20 +422,13 @@ export class AgentController implements vscode.Disposable {
       verification: 'unverified',
       detail:
         info.status === 'forbidden'
-          ? 'The web search engine could not be read (this needs an admin API key that may use /api/v1/retrieval/config). Confirm the engine in the owuiAgent.web.confirmedEngine setting.'
+          ? 'The web search engine could not be read; that needs an admin API key that may use /api/v1/retrieval/config. Check Admin Panel → Settings → Web Search in Open WebUI yourself.'
           : `The web search configuration could not be read: ${info.message}`,
     };
   }
 
   private currentWebStatus(): WebStatusView {
-    const s = readSettings();
-    if (!s.webEnabled) return { enabled: false, verification: 'unverified' };
-    if (this.webStatus.verification === 'unverified' && s.webConfirmedEngine.trim()) {
-      const engine = s.webConfirmedEngine.trim().toLowerCase();
-      return engine === 'searxng'
-        ? { enabled: true, engine, verification: 'confirmed', detail: 'You confirmed in settings that Open WebUI uses SearXNG; the extension could not verify it.' }
-        : { enabled: true, engine, verification: 'other-engine', detail: `You set the engine to "${engine}", a third-party service.` };
-    }
+    if (!readSettings().webEnabled) return { enabled: false, verification: 'unverified' };
     return { ...this.webStatus, enabled: true };
   }
 
@@ -506,11 +496,6 @@ export class AgentController implements vscode.Disposable {
     if (choice === 'Never for this workspace') await this.deps.workspaceState.update(key, 'never');
     if (choice !== 'Add to .gitignore') return;
     await appendFile(gitignore, `${existing && !existing.endsWith('\n') ? '\n' : ''}.owui/\n`, 'utf8');
-  }
-
-  whenIdle(): Promise<void> {
-    if (!this.session.busy) return Promise.resolve();
-    return new Promise((resolve) => this.idle.add(resolve));
   }
 
   viewState(): ViewState {
@@ -642,7 +627,6 @@ export class AgentController implements vscode.Disposable {
             browser = new BrowserSession({
               profileDir: path.join(this.deps.globalStorage, 'browser-profiles', id),
               channel: s.browserChannel,
-              allowExternal: s.browserAllowExternal,
               extraHosts: s.browserExtraHosts,
             });
           }
@@ -686,12 +670,6 @@ export class AgentController implements vscode.Disposable {
     void this.deps.globalState.update(STATE_TOTALS, totals);
   }
 
-  private notifyIdle(): void {
-    if (this.session.busy) return;
-    for (const resolve of this.idle) resolve();
-    this.idle.clear();
-  }
-
   private resolvedModels(): ResolvedModel[] {
     const overrides = readSettings().models;
     return this.serverModels.map((m) => resolveModel(m, overrides[m.id]));
@@ -700,7 +678,7 @@ export class AgentController implements vscode.Disposable {
   private selectedModel(): ResolvedModel | undefined {
     const models = this.resolvedModels();
     const id = this.deps.globalState.get<string>(STATE_MODEL);
-    return models.find((m) => m.id === id) ?? models.find((m) => m.id === readSettings().defaultModel) ?? models[0];
+    return models.find((m) => m.id === id) ?? models[0];
   }
 
   private ensureSelection(): void {

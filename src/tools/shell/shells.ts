@@ -10,7 +10,6 @@ export interface ShellSpec {
   executable: string;
   args(command: string): string[];
   verbatim: boolean;
-  syntax: 'posix' | 'powershell' | 'cmd';
 }
 
 function which(name: string, platform: NodeJS.Platform): string[] {
@@ -83,11 +82,10 @@ export class ShellRegistry {
           executable: ps,
           args: (c) => ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `${UTF8_PS}${c}`],
           verbatim: false,
-          syntax: 'powershell',
         });
       }
       const comspec = process.env.ComSpec ?? path.join(system, 'System32', 'cmd.exe');
-      out.push({ id: 'cmd', label: 'Command Prompt', executable: comspec, args: (c) => ['/d', '/s', '/c', `"${c}"`], verbatim: true, syntax: 'cmd' });
+      out.push({ id: 'cmd', label: 'Command Prompt', executable: comspec, args: (c) => ['/d', '/s', '/c', `"${c}"`], verbatim: true });
       return out;
     }
     for (const [id, label] of [
@@ -103,5 +101,5 @@ export class ShellRegistry {
 }
 
 function posixShell(id: ShellId, label: string, executable: string): ShellSpec {
-  return { id, label, executable, args: (c) => (id === 'gitbash' || id === 'bash' ? ['--noprofile', '--norc', '-c', c] : ['-c', c]), verbatim: false, syntax: 'posix' };
+  return { id, label, executable, args: (c) => (id === 'gitbash' || id === 'bash' ? ['--noprofile', '--norc', '-c', c] : ['-c', c]), verbatim: false };
 }

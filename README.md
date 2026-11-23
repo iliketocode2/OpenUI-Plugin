@@ -56,7 +56,6 @@ For models served by Ollama, turn on the model's **Usage** capability in Open We
 | Setting | Default | Purpose |
 |---|---|---|
 | `owuiAgent.baseUrl` | `http://localhost:3000` | Your Open WebUI URL; the only network destination. |
-| `owuiAgent.defaultModel` | | Model selected by default. |
 | `owuiAgent.models` | `{}` | Per model: `contextSize` (sent to Ollama as `num_ctx`; default 16384), `vision`, `local`, `thinking`. |
 | `owuiAgent.shell.windows` / `.posix` | `auto` | Shell for commands. On Windows, `auto` uses Git Bash when installed, otherwise PowerShell. |
 | `owuiAgent.commands.allowlist` | `[]` | Command prefixes that run without asking, for example `npm test`. User settings only. |
@@ -65,15 +64,11 @@ For models served by Ollama, turn on the model's **Usage** capability in Open We
 | `owuiAgent.skills.userDir` | `~/.owui-agent/skills` | Personal skills folder. |
 | `owuiAgent.web.enabled` | `false` | Web search and fetch through Open WebUI. |
 | `owuiAgent.web.autoApproveSearches` | `false` | Send searches without asking; page fetches always ask. |
-| `owuiAgent.web.confirmedEngine` | | Declare the search engine when the API key cannot read it. |
 | `owuiAgent.browser.enabled` | `false` | Localhost browser tool. |
 | `owuiAgent.browser.channel` | `auto` | Chrome or Edge. |
 | `owuiAgent.browser.extraHosts` | `[]` | Extra dev hosts the browser may open. |
-| `owuiAgent.browser.allowExternalRequests` | `false` | Let pages load internet resources. Not recommended. |
 | `owuiAgent.request.firstResponseTimeoutSeconds` | `1200` | Wait for a slow (for example CPU-only) model to start answering. |
 | `owuiAgent.request.stallTimeoutSeconds` | `300` | Abort when a running response goes silent. |
-| `owuiAgent.request.maxRetries` | `3` | Retries for dropped or refused connections and HTTP 408, 429, 502, 503 and 504. |
-| `owuiAgent.scratchpad.retentionDays` | `7` | Lifetime of the agent's throwaway scratchpad folders. |
 
 ## Limitations
 

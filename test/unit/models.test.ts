@@ -6,7 +6,7 @@ describe('parseModelList', () => {
   it('parses the recorded Open WebUI 0.12 model list', () => {
     const models = parseModelList(JSON.parse(loadFixture('live/models.json')));
     expect(models).toHaveLength(1);
-    expect(models[0]).toMatchObject({ id: 'qwen3.6:27b', vision: true, usageCapability: true });
+    expect(models[0]).toMatchObject({ id: 'qwen3.6:27b', vision: true });
     expect(models[0]!.contextSize).toBeUndefined();
   });
 

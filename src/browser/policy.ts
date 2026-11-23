@@ -3,7 +3,6 @@ import { isLoopbackHost } from '../net/egress';
 const LOCAL_SCHEMES = new Set(['data:', 'blob:', 'about:']);
 
 export interface BrowserPolicy {
-  allowExternal: boolean;
   extraHosts: string[];
 }
 
@@ -16,7 +15,6 @@ export function isAllowedBrowserUrl(raw: string, policy: BrowserPolicy): boolean
   }
   if (LOCAL_SCHEMES.has(url.protocol)) return true;
   if (!['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)) return false;
-  if (policy.allowExternal) return true;
   const host = url.hostname.toLowerCase();
   return isLoopbackHost(host) || policy.extraHosts.some((h) => h.trim().toLowerCase() === host);
 }

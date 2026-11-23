@@ -187,12 +187,9 @@ export class BrowserSession {
     await rm(this.opts.profileDir, { recursive: true, force: true }).catch(() => undefined);
     await mkdir(this.opts.profileDir, { recursive: true });
     const channels = this.opts.channel === 'auto' ? ['chrome', 'msedge'] : [this.opts.channel];
-    let proxy: { server: string; bypass: string } | undefined;
-    if (!this.opts.allowExternal) {
-      this.proxy = new BlackholeProxy();
-      const port = await this.proxy.start();
-      proxy = { server: `http://127.0.0.1:${port}`, bypass: ['localhost', '127.0.0.1', '[::1]', ...this.opts.extraHosts].join(',') };
-    }
+    this.proxy = new BlackholeProxy();
+    const port = await this.proxy.start();
+    const proxy = { server: `http://127.0.0.1:${port}`, bypass: ['localhost', '127.0.0.1', '[::1]', ...this.opts.extraHosts].join(',') };
     const failures: string[] = [];
     for (const channel of channels) {
       try {
