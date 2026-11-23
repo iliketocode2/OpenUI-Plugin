@@ -153,12 +153,9 @@ describe('edit_file', () => {
   });
 });
 
-describe.each([
-  ['ripgrep', testRipgrep()],
-  ['JS fallback', undefined],
-])('glob and grep (%s)', (label, rg) => {
+describe.runIf(testRipgrep())('glob and grep', () => {
   beforeEach(async () => {
-    env.ctx.ripgrep = rg;
+    env.ctx.ripgrep = testRipgrep();
     await mkdir(path.join(env.workspace, 'src', 'deep dir'), { recursive: true });
     await mkdir(path.join(env.workspace, 'node_modules', 'pkg'), { recursive: true });
     await writeFile(path.join(env.workspace, '.gitignore'), 'node_modules\n');
@@ -168,12 +165,12 @@ describe.each([
     await writeFile(path.join(env.workspace, 'node_modules', 'pkg', 'index.ts'), 'needle\n');
   });
 
-  it.runIf(label === 'JS fallback' || !!rg)('finds files by pattern and skips ignored folders', async () => {
+  it('finds files by pattern and skips ignored folders', async () => {
     const r = await env.run(globTool, { pattern: '**/*.ts' });
     expect(r.content.split('\n')).toEqual(['src/a.ts', 'src/deep dir/b.ts']);
   });
 
-  it.runIf(label === 'JS fallback' || !!rg)('searches contents with line numbers, globs and case options', async () => {
+  it('searches contents with line numbers, globs and case options', async () => {
     const content = await env.run(grepTool, { pattern: 'needle', glob: '*.ts' });
     const lines = content.content.split('\n').sort();
     expect(lines).toEqual(['src/a.ts:1:export const needle = 1;', 'src/deep dir/b.ts:2:const needle = 2;']);
@@ -182,7 +179,13 @@ describe.each([
     expect((await env.run(grepTool, { pattern: 'zzz-nothing' })).content).toBe('No matches.');
   });
 
-  it.runIf(label === 'JS fallback' || !!rg)('keeps directory-wide searches out of secrets files, even when the glob names them', async () => {
+  it('returns matched text exactly, backslashes included', async () => {
+    await writeFile(path.join(env.workspace, 'src', 're.ts'), 'const digits = /\\d+/;\nconst dir = "C:\\\\x";\n');
+    const r = await env.run(grepTool, { pattern: 'digits|dir =', path: 'src' });
+    expect(r.content.split('\n').sort()).toEqual(['re.ts:1:const digits = /\\d+/;', 're.ts:2:const dir = "C:\\\\x";']);
+  });
+
+  it('keeps directory-wide searches out of secrets files, even when the glob names them', async () => {
     await writeFile(path.join(env.workspace, '.gitignore'), 'node_modules\n.env\n');
     await writeFile(path.join(env.workspace, '.env'), 'API_KEY=SECRET\n');
     await writeFile(path.join(env.workspace, 'src', 'server.key'), 'SECRET\n');
@@ -190,6 +193,12 @@ describe.each([
       expect((await env.run(grepTool, args)).content, JSON.stringify(args)).toBe('No matches.');
     }
   });
+});
+
+it('glob and grep fail clearly without ripgrep', async () => {
+  env.ctx.ripgrep = undefined;
+  expect((await env.run(globTool, { pattern: '*' })).content).toMatch(/ripgrep was not found/);
+  expect((await env.run(grepTool, { pattern: 'x' })).content).toMatch(/ripgrep was not found/);
 });
 
 describe('interactive tools', () => {

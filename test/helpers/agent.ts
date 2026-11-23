@@ -18,6 +18,7 @@ import { ToolRegistry } from '../../src/tools/registry';
 import { ProcessManager } from '../../src/tools/shell/processManager';
 import { ShellRegistry } from '../../src/tools/shell/shells';
 import { PathGuard } from '../../src/workspace/paths';
+import { testRipgrep } from './toolContext';
 
 export type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
 
@@ -88,7 +89,7 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
       paths: new PathGuard(() => [workspace], scratchpad),
       processes: new ProcessManager(),
       scratchpad,
-      ripgrep: opts.ripgrep,
+      ripgrep: opts.ripgrep ?? testRipgrep(),
       checkpoints: new CheckpointManager(path.join(scratchpad, '.backups')),
       diffs,
       web: new OwuiWeb(egress, async () => opts.apiKey),

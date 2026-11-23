@@ -6,6 +6,11 @@ Tool calling:
 
 - The text-based tool protocol and the automatic fallback to it are gone, along with the per-model `toolMode` setting. The agent uses native tool calling only; a model whose server rejects tools now gets a clear error instead of a silent switch. The fallback could run a tool call the model had only shown as an example inside a code fence, and an unrelated error that mentioned "tool calling" switched the rest of the run to text mode.
 
+Search:
+
+- `grep` no longer rewrites backslashes in the matched text. It turned every `\` in a result into `/`, so `/\d+/` came back as `/d+/` and the model copied the corrupted text into edits. ripgrep now prints paths with `/` itself.
+- `glob` and `grep` use only ripgrep, which ships with VS Code. The JavaScript fallback is gone: it never ran in VS Code, ignored `.gitignore`, used different regex syntax and searched every same-named file in a folder when asked for one. Without ripgrep both tools now say so.
+
 Commands:
 
 - Command output is decoded as a stream and cleaned a whole line at a time. Before, each chunk was cleaned on its own: on Windows a chunk ending between `\r` and `\n` erased that whole line, and characters such as `é` or `✓` split across chunks became `�`.

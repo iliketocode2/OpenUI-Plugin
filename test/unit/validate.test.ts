@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { globToRegExp, matchGlob } from '../../src/workspace/glob';
 import { OutputBuffer, OutputDecoder, cleanOutput, truncateMiddle } from '../../src/tools/shell/output';
 import { coerceArgs, parseArguments, validateArgs } from '../../src/tools/validate';
 import type { JsonSchema } from '../../src/tools/types';
@@ -40,18 +39,6 @@ describe('argument validation', () => {
     expect(parseArguments('').value).toEqual({});
     expect(parseArguments('[1]').error).toMatch(/JSON object/);
     expect(parseArguments('{oops').error).toMatch(/not valid JSON/);
-  });
-});
-
-describe('glob', () => {
-  it('matches common patterns', () => {
-    expect(globToRegExp('src/**/*.ts').test('src/a/b/c.ts')).toBe(true);
-    expect(globToRegExp('src/**/*.ts').test('src/c.ts')).toBe(true);
-    expect(globToRegExp('*.{ts,tsx}').test('a.tsx')).toBe(true);
-    expect(globToRegExp('*.ts').test('a/b.ts')).toBe(false);
-    expect(matchGlob('deep/dir/package.json', 'package.json')).toBe(true);
-    expect(matchGlob('a/b.test.ts', '**/*.test.ts')).toBe(true);
-    expect(globToRegExp('file?.[jt]s').test('file1.ts')).toBe(true);
   });
 });
 
