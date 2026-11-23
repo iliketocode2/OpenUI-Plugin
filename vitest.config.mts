@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 /** Tests that start a real headless Chrome or Edge. They run separately (npm run test:browser) because they are slow and
  * time out when the CPU is busy, which on a machine running a local model is most of the time. */
-export const BROWSER_TESTS = ['test/unit/browserTool.test.ts', 'test/egress/browser-egress.test.ts'];
+export const BROWSER_TESTS = ['test/unit/browserTool.test.ts', 'test/egress/browser-egress.test.ts', 'test/unit/webviewPage.test.ts'];
 
 export default defineConfig({
   plugins: [

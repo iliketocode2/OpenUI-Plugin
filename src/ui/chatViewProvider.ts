@@ -214,6 +214,16 @@ async function openFile(p: string): Promise<void> {
   }
 }
 
+/** Links in the chat only ever open web pages: no file:, command:, vscode: or javascript: links, whatever the model wrote. */
+export function isWebLink(href: string): boolean {
+  try {
+    const url = new URL(href);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 async function openLinkWithConsent(href: string): Promise<void> {
   let uri: vscode.Uri;
   try {
@@ -221,7 +231,7 @@ async function openLinkWithConsent(href: string): Promise<void> {
   } catch {
     return;
   }
-  if (uri.scheme !== 'http' && uri.scheme !== 'https') return;
+  if (uri.scheme !== 'http' && uri.scheme !== 'https' || !isWebLink(href)) return;
   const choice = await vscode.window.showWarningMessage(
     `Open ${uri.toString(true)} in your browser? This leaves VS Code and contacts that site.`,
     { modal: true },

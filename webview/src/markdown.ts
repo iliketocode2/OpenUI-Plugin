@@ -46,6 +46,11 @@ const md: InstanceType<typeof MarkdownIt> = new MarkdownIt({
 });
 md.disable(['image']);
 
+// The model writes these links. Keep web, mail, in-page and relative ones; a command:, vscode: or other scheme stays
+// plain text. A click is checked again before anything opens.
+const defaultValidateLink = md.validateLink.bind(md);
+md.validateLink = (url) => defaultValidateLink(url) && (/^(https?:|mailto:|#)/i.test(url.trim()) || !/^[a-z][a-z0-9+.-]*:/i.test(url.trim()));
+
 export function renderMarkdown(text: string): string {
   return md.render(closeOpenFence(text));
 }

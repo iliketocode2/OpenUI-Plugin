@@ -1,33 +1,15 @@
 import { render, type RefObject } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'preact/hooks';
 import { SOVEREIGNTY_NOTICE } from '../../src/shared/notice';
-import type { AgentMode, HistoryEntry, ToWebview, ToolCardUpdate, TranscriptItem, ViewState } from '../../src/shared/protocol';
+import type { AgentMode, HistoryEntry, ToWebview, TranscriptItem, ViewState } from '../../src/shared/protocol';
 import { post, vscode } from './api';
 import { renderMarkdown } from './markdown';
 import { HistoryPanel } from './History';
 import { ReviewCard, RewindControl } from './Review';
 import { QuestionCard, TodoPanel } from './Question';
 import { ToolCard } from './ToolCard';
+import { reducer } from './state';
 
-type Action =
-  | { type: 'state'; state: ViewState }
-  | { type: 'delta'; id: string; kind: 'content' | 'reasoning'; text: string }
-  | { type: 'toolUpdate'; id: string; patch: ToolCardUpdate };
-
-function reducer(state: ViewState | undefined, action: Action): ViewState | undefined {
-  if (action.type === 'state') return action.state;
-  if (!state) return state;
-  const transcript = state.transcript.map((item) => {
-    if (item.id !== action.id) return item;
-    if (action.type === 'toolUpdate') return item.kind === 'tool' ? { ...item, ...action.patch } : item;
-    if (item.kind !== 'assistant') return item;
-    const next = { ...item, interrupted: undefined };
-    if (action.kind === 'content') next.text += action.text;
-    else next.reasoning += action.text;
-    return next;
-  });
-  return { ...state, transcript };
-}
 
 function App() {
   const [state, dispatch] = useReducer(reducer, undefined);

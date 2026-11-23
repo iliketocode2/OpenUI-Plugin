@@ -65,6 +65,9 @@ Reliability:
 
 Development:
 
+- The chat view has tests. Markdown rendering is checked against hostile model output with a whitelist of the tags, attributes and link schemes it may produce, and the built page runs in headless Chrome or Edge to check that such output never runs, that an approval does not take focus from the composer, and how Esc behaves.
+- Links in model output render only for web, mail, in-page and relative targets. A `command:` or other scheme link now stays plain text; it could not run before either, because command links are disabled and clicks only open http and https.
+
 - Browser tests run separately (`npm run test:browser`), one file at a time with longer timeouts, so `npm test` stays reliable while a local model is using the CPU.
 - The CI workflow installs ripgrep (and fails instead of skipping the ripgrep tests without it), caches the VS Code test build, runs the browser tests and passes `--no-sandbox` to VS Code on Linux runners.
 

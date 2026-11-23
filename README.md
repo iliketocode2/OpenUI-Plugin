@@ -89,7 +89,7 @@ npm run check           # type-check, lint, all of the above, VS Code integratio
 npm run package         # owui-agent-<version>.vsix (never published)
 ```
 
-- **Unit and egress tests** (Vitest): tool layer, stream parser, compaction, permissions, history, and the network-egress guards. The browser tool and its egress guard are tested separately in a real headless browser (`npm run test:browser`).
+- **Unit and egress tests** (Vitest): tool layer, stream parser, compaction, permissions, history, the chat view's state and Markdown sanitizing, and the network-egress guards. The browser tool, its egress guard and the chat view page itself (hostile model output, approval focus, Esc) are tested separately in a real headless browser (`npm run test:browser`).
 - **Integration tests:** run inside VS Code 1.96 against a mock Open WebUI that replays scripted tool-calling conversations.
 - **Live checks** against a real server (reads `OWUI_BASE_URL`, `OWUI_MODEL` and `OWUI_API_KEY` from the environment):
   - `npm run smoke:live` covers protocol details.
