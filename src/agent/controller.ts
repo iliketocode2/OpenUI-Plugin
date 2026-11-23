@@ -20,7 +20,7 @@ import type { OwuiClient } from '../owui/client';
 import { HttpError, MissingApiKeyError } from '../owui/errors';
 import { resolveModel, type ResolvedModel, type ServerModel } from '../owui/models';
 import type { StreamDelta } from '../owui/streamAssembler';
-import { TokenCalibrator, type CalibrationState } from '../owui/tokens';
+import { toolOutputChars } from '../owui/tokens';
 import type { Usage } from '../owui/types';
 import type { AgentMode, ApprovalDecision, ConnectionView, HistoryEntry, ModelView, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState, WebStatusView } from '../shared/protocol';
 import { scratchRoot } from '../storage/scratchpad';
@@ -35,12 +35,11 @@ import { describeError, log } from '../log';
 const STATE_NOTICE = 'owuiAgent.sovereigntyNoticeAcknowledged';
 const STATE_MODEL = 'owuiAgent.selectedModel';
 const STATE_MODE = 'owuiAgent.mode';
-const STATE_CALIBRATION = 'owuiAgent.tokenCalibration';
 const STATE_WARNED = 'owuiAgent.warnedOnce';
 const STATE_TOTALS = 'owuiAgent.tokenTotals';
-/** Keys earlier versions wrote to global state: the permission mode (now per workspace) and the models that used the
- * removed text tool protocol. */
-const LEGACY_GLOBAL_KEYS = ['owuiAgent.mode', 'owuiAgent.textToolModels'];
+/** Keys earlier versions wrote to global state: the permission mode (now per workspace), the models that used the
+ * removed text tool protocol, and the removed per-model token calibration. */
+const LEGACY_GLOBAL_KEYS = ['owuiAgent.mode', 'owuiAgent.textToolModels', 'owuiAgent.tokenCalibration'];
 
 export interface TokenTotals {
   prompt: number;
@@ -76,7 +75,6 @@ export class AgentController implements vscode.Disposable {
   private serverModels: ServerModel[] = [];
   private connection: ConnectionView;
   private session: AgentSession;
-  private readonly calibrator: TokenCalibrator;
   private listener: ControllerListener | undefined;
   private refreshSeq = 0;
   private readonly idle = new Set<() => void>();
@@ -89,7 +87,6 @@ export class AgentController implements vscode.Disposable {
   private readonly deletedSessions = new Set<string>();
 
   constructor(private readonly deps: ControllerDeps) {
-    this.calibrator = new TokenCalibrator(deps.globalState.get<Record<string, CalibrationState>>(STATE_CALIBRATION, {}));
     this.connection = { baseUrl: '', insecure: false, hasKey: false, status: 'unknown' };
     this.session = this.newAgentSession();
     for (const key of LEGACY_GLOBAL_KEYS) if (deps.globalState.get(key) !== undefined) void deps.globalState.update(key, undefined);
@@ -582,12 +579,11 @@ export class AgentController implements vscode.Disposable {
           workspace: folder ? folder.uri.fsPath : '(no folder open; work in the scratchpad)',
           scratchpad,
         }),
-      calibrator: this.calibrator,
       mode: () => this.mode,
       allowlist: () => readSettings().commandAllowlist,
       toolSettings: {
         commandTimeoutSeconds: settings.commandTimeoutSeconds,
-        maxOutputChars: Math.max(4000, Math.min(30_000, Math.round(model.contextSize * 0.6))),
+        maxOutputChars: toolOutputChars(model.contextSize),
         defaultShell: shell.id,
       },
       maxIterations: settings.maxIterations,
@@ -682,7 +678,6 @@ export class AgentController implements vscode.Disposable {
   }
 
   private recordTotals(model: ResolvedModel, usage: Usage | null): void {
-    void this.deps.globalState.update(STATE_CALIBRATION, this.calibrator.snapshot());
     if (!usage) return;
     const totals = this.deps.globalState.get<Record<string, TokenTotals>>(STATE_TOTALS, {});
     const cur = totals[model.id] ?? { prompt: 0, completion: 0, requests: 0 };

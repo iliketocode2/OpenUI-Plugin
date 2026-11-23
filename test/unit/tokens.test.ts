@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CHARS_PER_TOKEN, TokenCalibrator, checkTruncation, measurePrompt, outputReserve, preflight } from '../../src/owui/tokens';
+import { checkTruncation, measurePrompt, outputReserve, preflight, toolOutputChars, tokensFor } from '../../src/owui/tokens';
 
 const text = (n: number) => 'x'.repeat(n);
 
@@ -18,23 +18,18 @@ describe('measurePrompt', () => {
   });
 });
 
-describe('TokenCalibrator', () => {
-  it('learns chars per token from usage and persists a snapshot', () => {
-    const c = new TokenCalibrator();
-    expect(c.charsPerToken('m')).toBe(DEFAULT_CHARS_PER_TOKEN);
-    expect(c.observe('m', { chars: 4600, images: 0 }, 1000, 32768)).toBe(true);
-    expect(c.charsPerToken('m')).toBeCloseTo(4.6);
-    c.observe('m', { chars: 4000, images: 0 }, 1000, 32768);
-    expect(c.charsPerToken('m')).toBeCloseTo(4.6 * 0.7 + 4 * 0.3);
-    expect(new TokenCalibrator(c.snapshot()).charsPerToken('m')).toBeCloseTo(c.charsPerToken('m'));
+describe('tokensFor', () => {
+  it('estimates text at 3.5 characters per token and images at a flat cost', () => {
+    expect(tokensFor({ chars: 3500, images: 0 })).toBe(1000);
+    expect(tokensFor({ chars: 0, images: 2 })).toBe(1600);
   });
+});
 
-  it('refuses samples that could have been truncated or are implausible', () => {
-    const c = new TokenCalibrator();
-    expect(c.observe('m', { chars: 20000, images: 0 }, 4000, 4096)).toBe(false);
-    expect(c.observe('m', { chars: 100, images: 0 }, 10, 4096)).toBe(false);
-    expect(c.observe('m', { chars: 10000, images: 0 }, 100, 32768)).toBe(false);
-    expect(c.isCalibrated('m')).toBe(false);
+describe('toolOutputChars', () => {
+  it('gives one tool result about a fifth of the context, within fixed bounds', () => {
+    expect(toolOutputChars(16384)).toBe(11469);
+    expect(toolOutputChars(2048)).toBe(4000);
+    expect(toolOutputChars(262144)).toBe(40000);
   });
 });
 

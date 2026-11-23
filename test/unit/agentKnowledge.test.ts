@@ -98,6 +98,27 @@ describe('automatic compaction', () => {
     expect(t.session.transcript.filter((x) => x.kind === 'user')).toHaveLength(5);
   });
 
+  it('plans with the token counts the server reports, not only with characters', async () => {
+    const t = await harness({ override: { contextSize: 13000 } });
+    // The server counts about 1.5 times the character-based estimate for the first request, so the conversation
+    // needs compacting two questions earlier than in the test above, where usage is never reported.
+    mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: longAnswer(0), usage: { prompt_tokens: 5000, completion_tokens: 1700 } }) });
+    await t.session.send('question 0', t.ctx);
+    mock.enqueue(say(longAnswer(1)));
+    await t.session.send('question 1', t.ctx);
+    const before = mock.chatRequests().length;
+    // Summary chunks are sized in corrected tokens too, so each of the four messages is summarized on its own.
+    mock.enqueue(...[1, 2, 3, 4].map((i) => say(`- Summary after part ${i}`)), say('final answer'));
+    await t.session.send('question 2', t.ctx);
+    expect(String(body(before).messages[0]!.content)).toMatch(/compress the history of a coding session/);
+    expect(String(body(before + 4).messages[1]!.content)).toBe(`${SUMMARY_PREFIX}
+
+- Summary after part 4`);
+    expect(body(before + 4).tools).toBeDefined();
+    expect(t.session.transcript.some((x) => x.kind === 'warning' && /truncated/.test(x.text))).toBe(false);
+    expect(t.session.transcript.some((x) => x.kind === 'error')).toBe(false);
+  });
+
   it('keeps the conversation unchanged when summarizing fails', async () => {
     const t = await harness({ override: { contextSize: 13000 }, maxRetries: 0 });
     for (let i = 0; i < 4; i++) {

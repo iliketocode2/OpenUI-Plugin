@@ -113,10 +113,16 @@ describe('web content safety', () => {
   });
 
   it('formats results with sources and a hint to fetch when only snippets came back', () => {
-    const text = formatSearchResults('q', [{ title: 'T', link: 'https://x.example/', snippet: 'snip' }]);
+    const text = formatSearchResults('q', [{ title: 'T', link: 'https://x.example/', snippet: 'snip' }], 11_000);
     expect(text).toContain('URL: https://x.example/');
     expect(text).toMatch(/use web_fetch on a promising URL/);
-    expect(formatSearchResults('q', [])).toBe('No results for "q".');
+    expect(formatSearchResults('q', [], 11_000)).toBe('No results for "q".');
+  });
+
+  it('shares the output budget between results', () => {
+    const results = Array.from({ length: 8 }, (_, i) => ({ title: `T${i}`, link: `https://x.example/${i}`, snippet: 's'.repeat(400), content: 'c'.repeat(5000) }));
+    expect(formatSearchResults('q', results, 11_000).length).toBeLessThan(11_000);
+    expect(formatSearchResults('q', results.slice(0, 1), 11_000)).toContain('c'.repeat(2500));
   });
 });
 

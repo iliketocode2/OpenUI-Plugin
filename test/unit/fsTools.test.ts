@@ -25,6 +25,18 @@ describe('read_file', () => {
     expect(env.updates.at(-1)?.title).toBe('Read a.txt — lines 5–7 of 30');
   });
 
+  it('stops at a whole line within the output budget and continues exactly there', async () => {
+    // The test context's budget is 4000 characters; 1000 lines of about 100 characters cannot fit.
+    await writeFile(path.join(env.workspace, 'big.txt'), Array.from({ length: 1000 }, (_, i) => `row ${i + 1} ${'x'.repeat(90)}`).join('\n'));
+    const first = await env.run(readFileTool, { path: 'big.txt' });
+    expect(first.content.length).toBeLessThan(4100);
+    const next = Number(/continue with offset=(\d+)\]$/.exec(first.content)?.[1]);
+    const lastShown = first.content.split('\n').at(-2)!;
+    expect(lastShown).toMatch(new RegExp(`^\\s*${next - 1}\\trow ${next - 1} x+$`));
+    const second = await env.run(readFileTool, { path: 'big.txt', offset: next });
+    expect(second.content.split('\n')[0]).toMatch(new RegExp(`^\\s*${next}\\trow ${next} `));
+  });
+
   it('handles missing, binary, image and empty files', async () => {
     expect((await env.run(readFileTool, { path: 'nope.txt' })).isError).toBe(true);
     await writeFile(path.join(env.workspace, 'bin.dat'), Buffer.from([1, 2, 0, 3]));

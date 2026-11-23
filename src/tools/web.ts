@@ -5,7 +5,10 @@ import { fail, ok, type Tool } from './types';
 
 const MAX_RESULTS = 8;
 const MAX_RESULT_CONTENT = 2500;
-const MAX_PAGE_CHARS = 20_000;
+/** Room per search result for its title, URL, snippet and the untrusted-content markers. */
+const RESULT_OVERHEAD = 700;
+/** Room in a fetched page's result for the heading and markers. */
+const PAGE_OVERHEAD = 500;
 
 function escapeAttr(s: string): string {
   return s.replace(/[<>"&\r\n]/g, (c) => ({ '<': '%3C', '>': '%3E', '"': '%22', '&': '%26', '\r': '', '\n': '' })[c] ?? '');
@@ -24,13 +27,15 @@ function clip(text: string, max: number): string {
   return t.length > max ? `${t.slice(0, max)}\n… [${t.length - max} more characters not shown]` : t;
 }
 
-export function formatSearchResults(query: string, results: WebResult[]): string {
+/** `budget` is the tool output budget in characters; page content is shared out so all results fit in it. */
+export function formatSearchResults(query: string, results: WebResult[], budget: number): string {
   if (!results.length) return `No results for "${query}".`;
   const shown = results.slice(0, MAX_RESULTS);
+  const contentChars = Math.max(300, Math.min(MAX_RESULT_CONTENT, Math.floor(budget / shown.length) - RESULT_OVERHEAD));
   const blocks = shown.map((r, i) => {
     const lines = [`${i + 1}. ${r.title || '(untitled)'}`, `URL: ${r.link}`];
     if (r.snippet) lines.push(`Snippet: ${clip(r.snippet, 500)}`);
-    if (r.content) lines.push(`Content:\n${clip(r.content, MAX_RESULT_CONTENT)}`);
+    if (r.content) lines.push(`Content:\n${clip(r.content, contentChars)}`);
     return wrapUntrusted(r.link, lines.join('\n'));
   });
   const hint = shown.some((r) => r.content) ? '' : '\nOnly snippets were returned; use web_fetch on a promising URL to read it.';
@@ -85,7 +90,7 @@ export const webSearchTool: Tool<SearchArgs> = {
       async execute() {
         const { results } = await ctx.web.search(query, ctx.signal);
         ctx.update({ title: `Web search: ${query} — ${results.length} result${results.length === 1 ? '' : 's'}`, output: results.slice(0, MAX_RESULTS).map((r) => `${r.title}\n${r.link}`).join('\n\n') });
-        return ok(formatSearchResults(query, results));
+        return ok(formatSearchResults(query, results, ctx.settings.maxOutputChars));
       },
     };
   },
@@ -118,7 +123,7 @@ export const webFetchTool: Tool<FetchArgs> = {
       async execute() {
         const content = await ctx.web.fetchPage(url, ctx.signal);
         ctx.update({ title: `Fetch ${url} — ${Math.round(content.length / 1000)}k characters`, output: clip(content, 1500) });
-        return ok(`Content of ${url} (untrusted):\n\n${wrapUntrusted(url, clip(content, MAX_PAGE_CHARS))}`);
+        return ok(`Content of ${url} (untrusted):\n\n${wrapUntrusted(url, clip(content, ctx.settings.maxOutputChars - PAGE_OVERHEAD))}`);
       },
     };
   },

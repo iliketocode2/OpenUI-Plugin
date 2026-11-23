@@ -6,6 +6,12 @@ Tool calling:
 
 - The text-based tool protocol and the automatic fallback to it are gone, along with the per-model `toolMode` setting. The agent uses native tool calling only; a model whose server rejects tools now gets a clear error instead of a silent switch. The fallback could run a tool call the model had only shown as an example inside a code fence, and an unrelated error that mentioned "tool calling" switched the rest of the run to text mode.
 
+Context:
+
+- Token estimates are corrected by the server's own count. After each response the session compares the reported prompt tokens with its character-based estimate and scales every later estimate (the pre-send check, compaction and summary chunks) by that ratio. The persisted per-model calibration it replaces is gone.
+- Requests ask for usage (`stream_options.include_usage`), so OpenAI-compatible backends behind Open WebUI report token counts too.
+- One output budget, about a fifth of the context window (11k characters at the 16k default), sizes every tool result. `read_file` stops at a whole line when it is used up and says exactly where to continue; previously a long read lost its middle while the continuation hint pointed past it. Web search shares the budget between results, and `web_fetch` returns up to the budget instead of a fixed 20,000 characters.
+
 Security:
 
 - The permission mode is stored per workspace, so an auto-accept mode chosen in a trusted repository no longer carries over to others. Every workspace starts in **Ask before edits** once after updating.

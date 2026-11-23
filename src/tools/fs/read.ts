@@ -49,17 +49,25 @@ export const readFileTool: Tool<ReadArgs> = {
         if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
         const start = Math.max(1, args.offset ?? 1);
         const limit = args.limit ?? DEFAULT_LIMIT;
-        const end = Math.min(lines.length, start + limit - 1);
+        const last = Math.min(lines.length, start + limit - 1);
         if (!lines.length || (lines.length === 1 && lines[0] === '')) {
           ctx.update({ title: `Read ${target.display} — empty file` });
           return ok('(empty file)');
         }
         if (start > lines.length) return fail(`${target.display} has only ${lines.length} lines; offset ${start} is past the end.`);
-        const width = String(end).length;
-        const body = lines
-          .slice(start - 1, end)
-          .map((l, i) => `${String(start + i).padStart(width)}\t${l.length > MAX_LINE ? `${l.slice(0, MAX_LINE)}… [line truncated]` : l}`)
-          .join('\n');
+        // Stop at a whole line once the output budget is used, so the continuation offset below is exact.
+        const width = String(last).length;
+        const out: string[] = [];
+        let used = 0;
+        for (let n = start; n <= last; n++) {
+          const l = lines[n - 1]!;
+          const row = `${String(n).padStart(width)}\t${l.length > MAX_LINE ? `${l.slice(0, MAX_LINE)}… [line truncated]` : l}`;
+          if (out.length && used + row.length + 1 > ctx.settings.maxOutputChars) break;
+          out.push(row);
+          used += row.length + 1;
+        }
+        const end = start + out.length - 1;
+        const body = out.join('\n');
         const range = start === 1 && end === lines.length ? `${lines.length} lines` : `lines ${start}–${end} of ${lines.length}`;
         ctx.update({ title: `Read ${target.display} — ${range}` });
         const more = end < lines.length ? `\n[${lines.length - end} more lines; continue with offset=${end + 1}]` : '';

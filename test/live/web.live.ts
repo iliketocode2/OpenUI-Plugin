@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   try {
     const started = Date.now();
     const r = await web.search(QUERY);
-    const text = formatSearchResults(QUERY, r.results);
+    const text = formatSearchResults(QUERY, r.results, 11_000);
     line(r.results.length ? 'PASS' : 'WARN', 'web search', `${r.results.length} results in ${Date.now() - started}ms; page content included: ${r.withContent}; first: ${r.results[0]?.link ?? '-'}`);
     process.stdout.write(`${text.slice(0, 900)}\n…\n`);
   } catch (e) {

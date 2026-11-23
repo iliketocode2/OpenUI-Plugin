@@ -100,7 +100,8 @@ export class OwuiClient {
     };
     try {
       arm();
-      const body: Record<string, unknown> = { model: req.model, messages: req.messages, stream: true };
+      // include_usage asks OpenAI-compatible backends for the token counts that Ollama reports anyway.
+      const body: Record<string, unknown> = { model: req.model, messages: req.messages, stream: true, stream_options: { include_usage: true } };
       if (req.tools?.length) body.tools = req.tools;
       if (req.temperature !== undefined) body.temperature = req.temperature;
       if (req.maxTokens !== undefined) body.max_tokens = req.maxTokens;

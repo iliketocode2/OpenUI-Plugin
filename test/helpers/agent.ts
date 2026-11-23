@@ -13,7 +13,6 @@ import { OwuiWeb } from '../../src/owui/web';
 import { BROWSER_TOOLS, WEB_TOOLS } from '../../src/tools/registry';
 import { OwuiClient } from '../../src/owui/client';
 import { resolveModel, type ModelOverride } from '../../src/owui/models';
-import { TokenCalibrator } from '../../src/owui/tokens';
 import type { AgentMode, ApprovalDecision, AskUserQuestion, TranscriptItem } from '../../src/shared/protocol';
 import { ToolRegistry } from '../../src/tools/registry';
 import { ProcessManager } from '../../src/tools/shell/processManager';
@@ -124,7 +123,6 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
   const ctx: RunContext = {
     model,
     systemPrompt: () => renderSystemPrompt({ os: 'test', shell: 'default', shells: shells.available().map((s) => s.id).join(', '), date: '2026-10-14', workspace, scratchpad }),
-    calibrator: new TokenCalibrator(),
     mode: () => mode,
     allowlist: () => allowlist,
     toolSettings: { commandTimeoutSeconds: 30, maxOutputChars: 8000, defaultShell: undefined },

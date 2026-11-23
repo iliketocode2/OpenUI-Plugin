@@ -1,14 +1,14 @@
 import type { ToolDefinition, WireMessage } from './types';
 
-export const DEFAULT_CHARS_PER_TOKEN = 3.5;
+/** Deliberately low (English prose is closer to 4-5), so estimates err towards too many tokens. Only the part of a
+ * prompt the server has not counted yet is estimated this way; see AgentSession.estimateRequest. */
+export const CHARS_PER_TOKEN = 3.5;
 const PER_MESSAGE_OVERHEAD_CHARS = 16;
 const IMAGE_TOKENS = 800;
 const TRUNCATION_RATIO = 0.6;
 const TRUNCATION_MIN_ESTIMATE = 1500;
-const CALIBRATION_SAFE_FRACTION = 0.8;
-const CALIBRATION_WEIGHT = 0.3;
-const MIN_CPT = 1.5;
-const MAX_CPT = 8;
+/** Share of the context window one tool result may fill. */
+const TOOL_OUTPUT_SHARE = 0.2;
 
 export interface PromptSize {
   chars: number;
@@ -33,50 +33,13 @@ export function measurePrompt(messages: WireMessage[], tools?: ToolDefinition[])
   return { chars, images };
 }
 
-export function tokensFor(size: PromptSize, charsPerToken: number): number {
-  return Math.ceil(size.chars / charsPerToken) + size.images * IMAGE_TOKENS;
+export function tokensFor(size: PromptSize): number {
+  return Math.ceil(size.chars / CHARS_PER_TOKEN) + size.images * IMAGE_TOKENS;
 }
 
-export interface CalibrationState {
-  charsPerToken: number;
-  samples: number;
-}
-
-export class TokenCalibrator {
-  private readonly perModel = new Map<string, CalibrationState>();
-
-  constructor(initial?: Record<string, CalibrationState>) {
-    for (const [k, v] of Object.entries(initial ?? {})) this.perModel.set(k, v);
-  }
-
-  charsPerToken(model: string): number {
-    return this.perModel.get(model)?.charsPerToken ?? DEFAULT_CHARS_PER_TOKEN;
-  }
-
-  isCalibrated(model: string): boolean {
-    return (this.perModel.get(model)?.samples ?? 0) > 0;
-  }
-
-  estimate(model: string, size: PromptSize): number {
-    return tokensFor(size, this.charsPerToken(model));
-  }
-
-  observe(model: string, size: PromptSize, promptTokens: number, contextSize: number): boolean {
-    const textTokens = promptTokens - size.images * IMAGE_TOKENS;
-    if (textTokens <= 0 || size.chars < 200) return false;
-    if (promptTokens >= contextSize * CALIBRATION_SAFE_FRACTION) return false;
-    if (tokensFor(size, DEFAULT_CHARS_PER_TOKEN) >= contextSize * CALIBRATION_SAFE_FRACTION) return false;
-    const observed = size.chars / textTokens;
-    if (observed < MIN_CPT || observed > MAX_CPT) return false;
-    const cur = this.perModel.get(model);
-    const next = cur ? cur.charsPerToken * (1 - CALIBRATION_WEIGHT) + observed * CALIBRATION_WEIGHT : observed;
-    this.perModel.set(model, { charsPerToken: next, samples: (cur?.samples ?? 0) + 1 });
-    return true;
-  }
-
-  snapshot(): Record<string, CalibrationState> {
-    return Object.fromEntries(this.perModel);
-  }
+/** The characters one tool result may use: every tool sizes its output from this, so no result needs cutting twice. */
+export function toolOutputChars(contextSize: number): number {
+  return Math.max(4000, Math.min(40_000, Math.round(contextSize * TOOL_OUTPUT_SHARE * CHARS_PER_TOKEN)));
 }
 
 export type TruncationVerdict =

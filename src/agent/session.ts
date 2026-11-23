@@ -4,7 +4,7 @@ import { HttpError, MissingApiKeyError, isAbortError } from '../owui/errors';
 import type { ResolvedModel } from '../owui/models';
 import { stripThinkTags } from '../owui/reasoning';
 import type { StreamDelta } from '../owui/streamAssembler';
-import { checkTruncation, measurePrompt, outputReserve, preflight, type TokenCalibrator } from '../owui/tokens';
+import { CHARS_PER_TOKEN, checkTruncation, measurePrompt, outputReserve, preflight, tokensFor } from '../owui/tokens';
 import type { AssistantTurn, ContentPart, ToolDefinition, Usage, WireMessage } from '../owui/types';
 import type { CheckpointManager, PlannedChange, RewindResult } from '../checkpoints/checkpoints';
 import { describeSkills, type Skill } from '../skills/discovery';
@@ -64,7 +64,6 @@ export interface AgentEnv {
 export interface RunContext {
   model: ResolvedModel;
   systemPrompt(): string;
-  calibrator: TokenCalibrator;
   mode(): AgentMode;
   allowlist(): string[];
   toolSettings: ToolSettings;
@@ -98,6 +97,13 @@ const USAGE_HELP =
   'To enable it: Admin Panel → Settings → Models → edit the model → Capabilities → enable "Usage", then Save.';
 
 const REPEAT_LIMIT = 3;
+/** Compact when the conversation would fill this much of its budget. */
+const COMPACT_AT = 0.8;
+/** Bounds for the correction of the character-based estimate; outside them the server's count is not plausible. */
+const MIN_CORRECTION = 0.5;
+const MAX_CORRECTION = 3;
+/** Smaller prompts give a noisy ratio, dominated by the chat template's own tokens. */
+const MIN_SAMPLE_TOKENS = 500;
 
 export class AgentSession {
   readonly transcript: TranscriptItem[] = [];
@@ -113,6 +119,9 @@ export class AgentSession {
   private skills: Skill[] = [];
   private contextLoaded = false;
   private frozen: FrozenPrompt | undefined;
+  /** The server's token count for the last request divided by the character-based estimate for it. Every estimate
+   * is scaled by it, so planning uses the model's real tokenizer instead of a fixed ratio. */
+  private correction = 1;
   private announcedMode: AgentMode | undefined;
   created: number = Date.now();
   private lastCallKey = '';
@@ -356,12 +365,10 @@ export class AgentSession {
 
   private async maybeCompact(ctx: RunContext, signal: AbortSignal, force = false): Promise<void> {
     const { system, defs } = await this.prompt(ctx);
-    const fixed = measurePrompt([{ role: 'system', content: system }], defs);
-    const fixedTokens = ctx.calibrator.estimate(ctx.model.id, fixed);
-    const budget = Math.max(1, ctx.model.contextSize - outputReserve(ctx.model.contextSize) - fixedTokens);
-    const estimate = (msgs: WireMessage[]) => ctx.calibrator.estimate(ctx.model.id, measurePrompt(msgs));
-    if (!force && estimate(this.wire) < budget * 0.8) return;
-    const cpt = ctx.calibrator.charsPerToken(ctx.model.id);
+    // The budget is what the conversation may use: the context minus room for the answer, instructions and tools.
+    const estimate = (msgs: WireMessage[]) => this.estimate(msgs);
+    const budget = Math.max(1, ctx.model.contextSize - outputReserve(ctx.model.contextSize) - this.estimate([{ role: 'system', content: system }], defs));
+    if (!force && estimate(this.wire) < budget * COMPACT_AT) return;
     const summarize = async (transcript: string, previous: string | undefined): Promise<string> => {
       const content = previous ? `Previous summary:\n${previous}\n\nNext part of the transcript:\n${transcript}` : transcript;
       const turn = await this.env.client.chat(
@@ -391,7 +398,7 @@ export class AgentSession {
       result = await compact(
         this.wire,
         { estimate, summarize },
-        { budget, threshold: 0.8, target: force ? 0.3 : 0.5, keepRecent: 6, maxChunkChars: Math.max(4000, Math.floor(budget * cpt * 0.5)), force },
+        { budget, threshold: 0, target: force ? 0.3 : 0.5, keepRecent: 6, maxChunkChars: Math.max(4000, Math.floor((budget * CHARS_PER_TOKEN * 0.5) / this.correction)), force },
       );
     } catch (e) {
       notice.text = signal.aborted ? 'Compaction cancelled.' : `Compaction failed: ${(e as Error).message}. The conversation was left unchanged.`;
@@ -476,8 +483,8 @@ export class AgentSession {
     // Open WebUI 0.12 fails with HTTP 400 "'NoneType' object is not iterable" on an assistant message with neither
     // content nor tool calls. Earlier versions could save one, so skip them here to repair old sessions too.
     const messages: WireMessage[] = [{ role: 'system', content: system }, ...this.wire.filter((m) => !isEmptyAssistant(m))];
-    const size = measurePrompt(messages, defs);
-    const estimate = ctx.calibrator.estimate(ctx.model.id, size);
+    const raw = tokensFor(measurePrompt(messages, defs));
+    const estimate = Math.ceil(raw * this.correction);
     const verdict = preflight(estimate, ctx.model.contextSize, outputReserve(ctx.model.contextSize));
     this.usage = { promptTokens: estimate, contextSize: ctx.model.contextSize, contextSource: ctx.model.contextSource, estimated: true };
     if (verdict.kind === 'over') {
@@ -576,7 +583,7 @@ export class AgentSession {
     log.info(
       `${ctx.model.id}: ${((Date.now() - started) / 1000).toFixed(1)}s, ${turn.usage ? `${turn.usage.promptTokens} prompt + ${turn.usage.completionTokens} output tokens` : `~${estimate} prompt tokens (estimated)`}, ${calls.length} tool call(s), finish ${turn.finishReason ?? 'unknown'}.`,
     );
-    this.recordUsage(ctx, size, estimate, turn.usage);
+    this.recordUsage(ctx, raw, estimate, turn.usage);
     if (!calls.length && turn.finishReason === 'length') {
       this.pushWarning('The model stopped because it reached its output limit. Ask it to continue, or raise the limit in Open WebUI.');
     }
@@ -585,7 +592,8 @@ export class AgentSession {
   }
 
   private async executeCalls(calls: PendingCall[], ctx: RunContext, signal: AbortSignal): Promise<boolean> {
-    const limit = Math.max(4000, Math.min(60_000, Math.round(ctx.model.contextSize * ctx.calibrator.charsPerToken(ctx.model.id) * 0.3)));
+    // Tools keep their own output within the budget; this catches the rest, with room for their status lines and notes.
+    const limit = ctx.toolSettings.maxOutputChars + 1000;
     const images: ImageAttachment[] = [];
     // Every call gets exactly one result, in order, on the wire as soon as it is known, so a failure later in the
     // batch can never leave an assistant tool call without its answer.
@@ -767,7 +775,11 @@ export class AgentSession {
     return answers;
   }
 
-  private recordUsage(ctx: RunContext, size: ReturnType<typeof measurePrompt>, estimate: number, usage: Usage | null): void {
+  private estimate(messages: WireMessage[], defs?: ToolDefinition[]): number {
+    return Math.ceil(tokensFor(measurePrompt(messages, defs)) * this.correction);
+  }
+
+  private recordUsage(ctx: RunContext, raw: number, estimate: number, usage: Usage | null): void {
     this.events.usage(ctx.model, usage);
     if (!usage) {
       ctx.warnOnce(`usage:${ctx.model.id}`, USAGE_HELP);
@@ -782,7 +794,7 @@ export class AgentSession {
       );
       return;
     }
-    ctx.calibrator.observe(ctx.model.id, size, usage.promptTokens, ctx.model.contextSize);
+    if (raw >= MIN_SAMPLE_TOKENS) this.correction = Math.min(MAX_CORRECTION, Math.max(MIN_CORRECTION, usage.promptTokens / raw));
   }
 
   private onRetry(item: AssistantItem, info: RetryInfo): void {
