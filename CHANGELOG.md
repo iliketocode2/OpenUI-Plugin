@@ -6,6 +6,10 @@ Tool calling:
 
 - The text-based tool protocol and the automatic fallback to it are gone, along with the per-model `toolMode` setting. The agent uses native tool calling only; a model whose server rejects tools now gets a clear error instead of a silent switch. The fallback could run a tool call the model had only shown as an example inside a code fence, and an unrelated error that mentioned "tool calling" switched the rest of the run to text mode.
 
+Conversation:
+
+- When you rewind only the code, or revert files during review, the model now learns about it at the start of your next message. Before, the extension added a made-up exchange to the conversation, including a reply the model never wrote ("Understood…", "Noted."). The note is saved with the session, so it also survives a reload.
+
 Search:
 
 - `grep` no longer rewrites backslashes in the matched text. It turned every `\` in a result into `/`, so `/\d+/` came back as `/d+/` and the model copied the corrupted text into edits. ripgrep now prints paths with `/` itself.

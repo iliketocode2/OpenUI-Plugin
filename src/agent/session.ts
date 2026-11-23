@@ -63,6 +63,7 @@ export interface AgentEnv {
 
 export interface RunContext {
   model: ResolvedModel;
+  /** The agent's instructions, including the sections for enabled features such as web access. */
   systemPrompt(): string;
   mode(): AgentMode;
   allowlist(): string[];
@@ -73,7 +74,6 @@ export interface RunContext {
   loadContext(): Promise<{ sections: string[]; skills: Skill[] }>;
   onWorkspaceDirCreated(dir: string): void;
   toolEnabled(name: string): boolean;
-  extraPromptSections(): string[];
   autoApproveSearches(): boolean;
 }
 
@@ -123,6 +123,9 @@ export class AgentSession {
    * is scaled by it, so planning uses the model's real tokenizer instead of a fixed ratio. */
   private correction = 1;
   private announcedMode: AgentMode | undefined;
+  /** What the user did that the model must hear about (a code-only rewind, files reverted during review). Sent at the
+   * start of the next user message, so the model is never shown a reply it did not write. */
+  private pendingNotes: string[] = [];
   created: number = Date.now();
   private lastCallKey = '';
   private repeatCount = 0;
@@ -190,14 +193,14 @@ export class AgentSession {
         this.wire.splice(start.wire);
         this.transcript.splice(start.transcript);
         this.announcedMode = undefined;
+        this.pendingNotes = [];
         for (const id of [...this.turnStarts.keys()]) if (!this.transcript.some((t) => t.id === id)) this.turnStarts.delete(id);
       }
     } else if (result) {
       this.pushWarning(
         `Restored the code to before "${truncateLabel(item.text)}": ${result.restored.length} file(s) restored, ${result.deleted.length} deleted. The conversation was kept; tell the agent what changed.`,
       );
-      this.wire.push({ role: 'user', content: `[The user rewound the workspace files to the state before the message "${truncateLabel(item.text)}". Changes made after that point are gone.]` });
-      this.wire.push({ role: 'assistant', content: 'Understood. I will re-read files before relying on them.' });
+      this.pendingNotes.push(`[The user rewound the workspace files to the state before the message "${truncateLabel(item.text)}". Changes made after that point are gone; re-read files before relying on them.]`);
     }
     this.events.changed();
     return { text: item.text, ...(result ? { result } : {}) };
@@ -218,7 +221,7 @@ export class AgentSession {
     if (item.files.every((f) => f.decision)) {
       item.status = 'done';
       const reverted = item.files.filter((f) => f.decision === 'reverted').map((f) => f.display);
-      if (reverted.length) this.wire.push({ role: 'user', content: `[During review the user reverted these files to their earlier state: ${reverted.join(', ')}.]` }, { role: 'assistant', content: 'Noted.' });
+      if (reverted.length) this.pendingNotes.push(`[During review the user reverted these files to their earlier state: ${reverted.join(', ')}.]`);
     }
     this.events.changed();
   }
@@ -241,7 +244,7 @@ export class AgentSession {
     const cp = this.env.checkpoints.begin(trimmed);
     user.checkpoint = cp.id;
     this.runCheckpoint = cp.id;
-    this.wire.push({ role: 'user', content: this.withModeNote(trimmed, ctx.mode()) });
+    this.wire.push({ role: 'user', content: this.withNotes(trimmed, ctx.mode()) });
     this.lastCallKey = '';
     this.repeatCount = 0;
     await this.run(ctx);
@@ -249,16 +252,18 @@ export class AgentSession {
 
   async resume(ctx: RunContext): Promise<void> {
     if (!this.canResume()) return;
-    if (ctx.mode() !== this.announcedMode) this.wire.push({ role: 'user', content: this.withModeNote('Continue.', ctx.mode()) });
+    if (ctx.mode() !== this.announcedMode || this.pendingNotes.length) this.wire.push({ role: 'user', content: this.withNotes('Continue.', ctx.mode()) });
     await this.run(ctx);
   }
 
-  /** Tells the model about the permission mode in the conversation, not the system prompt, so a mode change
-   * appends text instead of invalidating the cached prefix. */
-  private withModeNote(text: string, mode: AgentMode): string {
-    if (mode === this.announcedMode) return text;
+  /** Puts the pending notes, and the permission mode when it changed, in front of a user message. They go in the
+   * conversation rather than the system prompt, so a change appends text instead of invalidating the cached prefix. */
+  private withNotes(text: string, mode: AgentMode): string {
+    const notes = mode === this.announcedMode ? [] : [modeNote(mode)];
     this.announcedMode = mode;
-    return `${modeNote(mode)}\n\n${text}`;
+    notes.push(...this.pendingNotes);
+    this.pendingNotes = [];
+    return notes.length ? `${notes.join('\n')}\n\n${text}` : text;
   }
 
   async dispose(): Promise<void> {
@@ -299,6 +304,7 @@ export class AgentSession {
       turns: [...this.turnStarts],
     };
     if (model) record.model = model;
+    if (this.pendingNotes.length) record.notes = [...this.pendingNotes];
     return record;
   }
 
@@ -307,6 +313,8 @@ export class AgentSession {
     this.transcript.splice(0, this.transcript.length, ...record.transcript);
     this.wire.splice(0, this.wire.length, ...record.wire);
     this.todos = record.todos ?? [];
+    this.pendingNotes = [...(record.notes ?? [])];
+    this.announcedMode = undefined;
     this.env.checkpoints.restore(record.checkpoints ?? []);
     this.turnStarts.clear();
     for (const [id, start] of record.turns ?? []) this.turnStarts.set(id, start);
@@ -356,7 +364,7 @@ export class AgentSession {
     const key = [ctx.model.id, ...tools.map((t) => t.name)].join('|');
     if (this.frozen?.key === key) return this.frozen;
     const defs = this.env.tools.definitions(tools, { shells: this.env.shells.available().map((s) => s.id) });
-    const parts = [ctx.systemPrompt(), ...this.contextSections, ...ctx.extraPromptSections()];
+    const parts = [ctx.systemPrompt(), ...this.contextSections];
     const skills = describeSkills(this.skills);
     if (skills) parts.push(skills);
     this.frozen = { key, system: parts.join('\n\n'), tools, defs };

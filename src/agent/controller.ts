@@ -32,6 +32,8 @@ import { AgentSession, type RunContext } from './session';
 import { renderSystemPrompt } from './systemPrompt';
 import { describeError, log } from '../log';
 
+/** Added to the instructions while web access is on. */
+const WEB_PROMPT = webPrompt.replace(/^<!--[^\n]*-->\s*\n/, '').trim();
 const STATE_NOTICE = 'owuiAgent.sovereigntyNoticeAcknowledged';
 const STATE_MODEL = 'owuiAgent.selectedModel';
 const STATE_MODE = 'owuiAgent.mode';
@@ -578,7 +580,7 @@ export class AgentController implements vscode.Disposable {
           date: new Date().toISOString().slice(0, 10),
           workspace: folder ? folder.uri.fsPath : '(no folder open; work in the scratchpad)',
           scratchpad,
-        }),
+        }, readSettings().webEnabled ? [WEB_PROMPT] : []),
       mode: () => this.mode,
       allowlist: () => readSettings().commandAllowlist,
       toolSettings: {
@@ -604,7 +606,6 @@ export class AgentController implements vscode.Disposable {
         if (BROWSER_TOOLS.has(name)) return s.browserEnabled;
         return true;
       },
-      extraPromptSections: () => (readSettings().webEnabled ? [webPrompt.replace(/^<!--[^\n]*-->\s*\n/, '').trim()] : []),
       autoApproveSearches: () => readSettings().webAutoApproveSearches,
     };
   }

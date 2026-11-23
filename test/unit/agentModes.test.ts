@@ -99,7 +99,12 @@ describe('review at end', () => {
     expect(await read(t, 'revert.txt')).toBe('old revert');
     await expect(read(t, 'added.txt')).rejects.toThrow();
     expect(review).toMatchObject({ status: 'done' });
-    expect(String(t.session.wireMessages().at(-2)!.content)).toMatch(/reverted these files.*revert\.txt, added\.txt/);
+    const before = t.session.wireMessages().length;
+    mock.enqueue(say('ok'));
+    await t.session.send('carry on', t.ctx);
+    const added = t.session.wireMessages().slice(before);
+    expect(added.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(String(added[0]!.content)).toMatch(/^\[During review the user reverted these files to their earlier state: revert\.txt, added\.txt\.\]\n\ncarry on$/);
   });
 
   it('does not show a review in other modes', async () => {
@@ -151,8 +156,13 @@ describe('diffs and rewind', () => {
     const user = t.session.transcript.find((x) => x.kind === 'user')!;
     await t.session.rewind(user.id, 'code');
     expect(await read(t, 'c.txt')).toBe('orig');
-    expect(String(t.session.wireMessages().at(-2)!.content)).toMatch(/rewound the workspace files/);
     expect(t.session.transcript.some((x) => x.kind === 'warning' && /Restored the code/.test(x.text))).toBe(true);
+    // Nothing is invented in the conversation: the note travels with the user's next message, and survives a reload.
+    expect(t.session.wireMessages().at(-1)).toMatchObject({ role: 'assistant', content: 'done' });
+    t.session.restore(JSON.parse(JSON.stringify(t.session.toRecord('t', undefined, 'auto'))));
+    mock.enqueue(say('ok'));
+    await t.session.send('what now?', t.ctx);
+    expect(String(body(mock.chatRequests().length - 1).messages.at(-1)!.content)).toMatch(/^\[Permission mode: [^\]]*\]\n\[The user rewound the workspace files[^\]]*\]\n\nwhat now\?$/);
   });
 });
 

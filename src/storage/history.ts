@@ -25,6 +25,8 @@ export interface SessionRecord {
   checkpoints: SerializedCheckpoint[];
   scratchpad?: string;
   turns?: [string, { wire: number; transcript: number }][];
+  /** Notes for the model that wait for the next user message. */
+  notes?: string[];
 }
 
 export interface SessionSummary {
