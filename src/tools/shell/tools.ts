@@ -1,14 +1,11 @@
-import { createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import * as path from 'node:path';
 import { fail, ok, type Tool, type ToolContext } from '../types';
-import { cleanOutput, truncateMiddle } from './output';
+import { truncateMiddle } from './output';
 import type { ShellSpec } from './shells';
-import { killTree, spawnShell } from './spawn';
 
 const UPDATE_MS = 300;
 const DISPLAY_CHARS = 6000;
-const CLOSE_GRACE_MS = 500;
 
 /** The registry narrows this enum to the shells installed on this machine, or drops it when there is only one. */
 function shellParam(): { type: 'string'; enum: string[]; description: string } {
@@ -64,76 +61,51 @@ async function runCommand(args: RunArgs, shell: ShellSpec, cwd: string, ctx: Too
   const timeoutMs = Math.min(args.timeout_seconds ?? ctx.settings.commandTimeoutSeconds, 3600) * 1000;
   await mkdir(ctx.scratchpad, { recursive: true });
   const logPath = path.join(ctx.scratchpad, `cmd-${ctx.callId}.log`);
-  const log = createWriteStream(logPath);
-  const child = spawnShell(shell, args.command, cwd);
-  let output = '';
-  let total = 0;
-  let lastUpdate = 0;
-  let timedOut = false;
-  let pendingUpdate: ReturnType<typeof setTimeout> | undefined;
-  const headLimit = ctx.settings.maxOutputChars;
-  const pushUpdate = () => {
-    pendingUpdate = undefined;
-    lastUpdate = Date.now();
-    ctx.update({ output: output.length > DISPLAY_CHARS ? `…\n${output.slice(-DISPLAY_CHARS)}` : output });
-  };
-  const onData = (d: Buffer) => {
-    log.write(d);
-    const text = cleanOutput(d.toString('utf8'));
-    total += text.length;
-    output += text;
-    if (output.length > headLimit * 4) output = truncateMiddle(output, headLimit * 2).text;
-    if (Date.now() - lastUpdate > UPDATE_MS) pushUpdate();
-    else pendingUpdate ??= setTimeout(pushUpdate, UPDATE_MS);
-  };
-  child.stdout?.on('data', onData);
-  child.stderr?.on('data', onData);
-  const timer = setTimeout(() => {
-    timedOut = true;
-    void killTree(child);
-  }, timeoutMs);
-  const onAbort = () => void killTree(child);
-  ctx.signal.addEventListener('abort', onAbort, { once: true });
-  let lingering = false;
-  const exitCode = await new Promise<number | null>((resolve) => {
-    let settled = false;
-    const settle = (code: number | null) => {
-      if (settled) return;
-      settled = true;
-      resolve(code);
-    };
-    child.once('error', (e) => {
-      output += `\n[failed to start ${shell.label}: ${e.message}]`;
-      settle(-1);
-    });
-    child.once('close', (code) => settle(code));
-    // 'close' waits until every process holding stdout/stderr has ended, so a child left running in the background
-    // (`cmd &`, `start /b`) would block it forever. Wait briefly for trailing output, then stop listening.
-    child.once('exit', (code) => {
-      setTimeout(() => {
-        if (settled) return;
-        lingering = true;
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-        settle(code);
-      }, CLOSE_GRACE_MS);
-    });
-  });
-  clearTimeout(timer);
-  if (pendingUpdate) clearTimeout(pendingUpdate);
-  ctx.signal.removeEventListener('abort', onAbort);
-  await new Promise<void>((r) => log.end(() => r()));
-  const t = truncateMiddle(output.trimEnd(), headLimit);
-  ctx.update({ output: t.text.length > DISPLAY_CHARS ? `…\n${t.text.slice(-DISPLAY_CHARS)}` : t.text, exitCode });
-  if (ctx.signal.aborted) return fail(`Command cancelled by the user.\n${t.text}`);
-  const status = timedOut ? `Timed out after ${timeoutMs / 1000}s and was killed.` : `Exit code ${exitCode}.`;
-  const full = t.truncated ? `\n[Output truncated; the full output (${total} characters) is in ${logPath}. Use read_file or grep on it.]` : '';
+  const proc = ctx.processes.start(shell, args.command, cwd, args.description, { logPath, foreground: true });
+  const show = () => tail(`${proc.output.all()}${proc.partial()}`);
+  const live = throttle(() => ctx.update({ output: show() }), UPDATE_MS);
+  const unwatch = ctx.processes.watch(proc.id, live.call);
+  const outcome = await ctx.processes.wait(proc.id, timeoutMs, ctx.signal);
+  if (outcome !== 'done') await ctx.processes.stop(proc.id);
+  unwatch();
+  live.cancel();
+  ctx.processes.forget(proc.id);
+
+  const t = truncateMiddle(proc.output.all().trimEnd(), ctx.settings.maxOutputChars);
+  ctx.update({ output: tail(t.text), exitCode: proc.exitCode ?? null });
+  if (outcome === 'aborted' || ctx.signal.aborted) return fail(`Command cancelled by the user.\n${t.text}`);
+  const timedOut = outcome === 'timeout';
+  const status = timedOut ? `Timed out after ${timeoutMs / 1000}s and was killed.` : `Exit code ${proc.exitCode}.`;
   const body = t.text ? `\n${t.text}` : '\n(no output)';
-  const bg = lingering && !timedOut
+  const full = t.truncated ? `\n[Output truncated; the full output (${proc.output.length} characters) is in ${logPath}. Use read_file or grep on it.]` : '';
+  const bg = proc.lingering && !timedOut
     ? '\n[The command exited, but a process it started in the background is still running; its later output is not captured. Use start_process for servers and watchers.]'
     : '';
   const result = `${status}${body}${full}${bg}`;
-  return exitCode === 0 && !timedOut ? ok(result) : { content: result, isError: true };
+  return proc.exitCode === 0 && !timedOut ? ok(result) : fail(result);
+}
+
+/** The end of the output, as shown on the tool card. */
+function tail(text: string): string {
+  return text.length > DISPLAY_CHARS ? `…\n${text.slice(-DISPLAY_CHARS)}` : text;
+}
+
+/** Runs `fn` at most once per `ms`, and once more at the end of a burst. */
+function throttle(fn: () => void, ms: number): { call: () => void; cancel: () => void } {
+  let last = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const run = () => {
+    timer = undefined;
+    last = Date.now();
+    fn();
+  };
+  return {
+    call: () => {
+      if (Date.now() - last > ms) run();
+      else timer ??= setTimeout(run, ms);
+    },
+    cancel: () => clearTimeout(timer),
+  };
 }
 
 interface StartArgs {

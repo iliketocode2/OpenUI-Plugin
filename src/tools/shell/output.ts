@@ -1,3 +1,5 @@
+import { StringDecoder } from 'node:string_decoder';
+
 const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 
 export function stripAnsi(text: string): string {
@@ -10,6 +12,48 @@ export function normalizeNewlines(text: string): string {
 
 export function cleanOutput(text: string): string {
   return normalizeNewlines(stripAnsi(text));
+}
+
+/** An unfinished line longer than this is passed on anyway, so output without newlines cannot pile up unseen. */
+const MAX_PENDING = 64 * 1024;
+
+/** Turns one stream of raw process output into clean text. Chunks can end anywhere: inside a UTF-8 character, between
+ * \r and \n, or inside an ANSI code. So it decodes as a stream and cleans whole lines only, holding back the
+ * unfinished last line until the rest arrives. */
+export class OutputDecoder {
+  private readonly decoder = new StringDecoder('utf8');
+  private pending = '';
+
+  /** Returns the complete lines this chunk finished, cleaned. */
+  push(chunk: Buffer): string {
+    this.pending += this.decoder.write(chunk);
+    const end = this.pending.lastIndexOf('\n');
+    let done = '';
+    if (end !== -1) {
+      done = this.pending.slice(0, end + 1);
+      this.pending = this.pending.slice(end + 1);
+    }
+    // A progress bar redraws one line with \r; only its latest state matters. A final \r may be half of \r\n.
+    const cr = this.pending.lastIndexOf('\r', this.pending.length - 2);
+    if (cr !== -1) this.pending = this.pending.slice(cr + 1);
+    if (this.pending.length > MAX_PENDING) {
+      done += this.pending;
+      this.pending = '';
+    }
+    return done ? cleanOutput(done) : '';
+  }
+
+  /** The unfinished last line as it would look now, for live display. */
+  get partial(): string {
+    return cleanOutput(this.pending);
+  }
+
+  /** Returns whatever is left once the stream has ended, and resets. */
+  flush(): string {
+    const rest = this.pending + this.decoder.end();
+    this.pending = '';
+    return rest ? cleanOutput(rest) : '';
+  }
 }
 
 export interface Truncated {

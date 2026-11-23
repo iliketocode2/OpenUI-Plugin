@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { globToRegExp, matchGlob } from '../../src/workspace/glob';
-import { OutputBuffer, cleanOutput, truncateMiddle } from '../../src/tools/shell/output';
+import { OutputBuffer, OutputDecoder, cleanOutput, truncateMiddle } from '../../src/tools/shell/output';
 import { coerceArgs, parseArguments, validateArgs } from '../../src/tools/validate';
 import type { JsonSchema } from '../../src/tools/types';
 
@@ -58,6 +58,22 @@ describe('glob', () => {
 describe('output helpers', () => {
   it('strips ANSI codes and carriage-return progress lines', () => {
     expect(cleanOutput('\x1b[32mok\x1b[0m\r\nprogress 10%\rprogress 100%\n')).toBe('ok\nprogress 100%\n');
+  });
+
+  it('decodes output split at any byte, including inside CRLF, UTF-8 characters and ANSI codes', () => {
+    const raw = Buffer.from('line one\r\nnaïve ✓ ok\r\n\x1b[32mgreen\x1b[0m\r\nprogress 10%\rprogress 100%\r\ndone', 'utf8');
+    const expected = 'line one\nnaïve ✓ ok\ngreen\nprogress 100%\ndone';
+    for (let cut = 1; cut < raw.length; cut++) {
+      const d = new OutputDecoder();
+      const text = d.push(raw.subarray(0, cut)) + d.push(raw.subarray(cut)) + d.flush();
+      expect(text, `split at byte ${cut}`).toBe(expected);
+    }
+  });
+
+  it('shows the unfinished line, collapsed to its latest progress update', () => {
+    const d = new OutputDecoder();
+    expect(d.push(Buffer.from('done\nDownloading 10%\rDownloading 55%'))).toBe('done\n');
+    expect(d.partial).toBe('Downloading 55%');
   });
 
   it('keeps head and tail when truncating', () => {

@@ -6,6 +6,11 @@ Tool calling:
 
 - The text-based tool protocol and the automatic fallback to it are gone, along with the per-model `toolMode` setting. The agent uses native tool calling only; a model whose server rejects tools now gets a clear error instead of a silent switch. The fallback could run a tool call the model had only shown as an example inside a code fence, and an unrelated error that mentioned "tool calling" switched the rest of the run to text mode.
 
+Commands:
+
+- Command output is decoded as a stream and cleaned a whole line at a time. Before, each chunk was cleaned on its own: on Windows a chunk ending between `\r` and `\n` erased that whole line, and characters such as `é` or `✓` split across chunks became `�`.
+- `run_command` and `start_process` share one implementation in the process manager, so a fix to how commands start, stream, time out or stop applies to both. While a command runs, its card also shows the line being written (for example a progress percentage), and a `start_process` wait pattern can match a prompt that has no newline yet.
+
 Context:
 
 - Token estimates are corrected by the server's own count. After each response the session compares the reported prompt tokens with its character-based estimate and scales every later estimate (the pre-send check, compaction and summary chunks) by that ratio. The persisted per-model calibration it replaces is gone.

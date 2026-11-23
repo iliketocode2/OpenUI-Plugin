@@ -67,6 +67,24 @@ describe('run_command behaviour', () => {
     expect(r.content).toContain('["a b","c"]');
   });
 
+  it('keeps every line when output arrives in pieces that split CRLF and UTF-8 characters', async () => {
+    await writeFile(
+      path.join(env.workspace, 'drip.js'),
+      [
+        "const text = Buffer.from(Array.from({ length: 40 }, (_, i) => `línea ${i} ✓\\r\\n`).join(''));",
+        'let at = 0;',
+        'const t = setInterval(() => {',
+        '  if (at >= text.length) return clearInterval(t);',
+        '  process.stdout.write(text.subarray(at, at + 5));',
+        '  at += 5;',
+        '}, 1);',
+      ].join('\n'),
+    );
+    const r = await env.run(runCommandTool, { command: `${node} drip.js`, description: 'Write in pieces' });
+    expect(r.content).toBe(`Exit code 0.\n${Array.from({ length: 40 }, (_, i) => `línea ${i} ✓`).join('\n')}`);
+    expect(env.processes.list()).toHaveLength(0);
+  });
+
   it('kills commands that exceed the timeout, including child processes', async () => {
     const started = Date.now();
     const r = await env.run(runCommandTool, { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Hang', timeout_seconds: 2 });
@@ -132,7 +150,7 @@ describe('background processes', () => {
   it('stopAll cleans up every running process', async () => {
     await env.run(startProcessTool, { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Idle 1' });
     await env.run(startProcessTool, { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Idle 2' });
-    expect(env.processes.runningCount()).toBe(2);
+    expect(env.processes.list().filter((p) => p.exitCode === undefined)).toHaveLength(2);
     await env.processes.stopAll();
     expect(env.processes.list()).toHaveLength(0);
   });
