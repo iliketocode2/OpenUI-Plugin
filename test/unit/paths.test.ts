@@ -59,6 +59,26 @@ describe('PathGuard', () => {
     expect(guard.resolve('link/file.txt').zone).toBe('outside');
   });
 
+  it('follows dangling links, whose target a write would create outside the workspace', async () => {
+    // Junctions need no special rights on Windows; elsewhere a plain directory symlink does the same.
+    const missingDir = path.join(base, 'not yet', 'dir');
+    const dirLink = path.join(ws, 'dangling-dir');
+    await symlink(missingDir, dirLink, process.platform === 'win32' ? 'junction' : 'dir');
+    expect(guard.resolve('dangling-dir').zone).toBe('outside');
+    expect(guard.resolve('dangling-dir/new.txt').zone).toBe('outside');
+    expect(guard.resolve('dangling-dir/new.txt').absolute).toBe(path.join(ws, 'dangling-dir', 'new.txt'));
+
+    // A link to a missing file inside the workspace stays inside, and its target's name still counts.
+    const fileLink = path.join(ws, 'later.txt');
+    try {
+      await symlink(path.join(ws, '.env.later'), fileLink, 'file');
+    } catch {
+      return; // creating file symlinks needs Developer Mode or admin rights on Windows
+    }
+    expect(guard.resolve('later.txt').zone).toBe('workspace');
+    expect(guard.resolve('later.txt').sensitive).toBe(true);
+  });
+
   it.runIf(process.platform === 'win32')('rejects NTFS alternate data streams', () => {
     expect(() => guard.resolve('.env::$DATA')).toThrow(/":"/);
     expect(() => guard.resolve('notes.txt:hidden')).toThrow(/":"/);

@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import * as path from 'node:path';
 
 export type PathZone = 'workspace' | 'scratchpad' | 'outside';
@@ -98,7 +98,12 @@ function canonical(p: string): string {
   return n.length > 1 && /[\\/]$/.test(n) && !/^[A-Za-z]:\\$/.test(n) ? n.slice(0, -1) : n;
 }
 
-function realOrNearest(p: string): string {
+/** Links followed before giving up, as the OS does for a cycle. */
+const MAX_LINKS = 40;
+
+/** Where `p` really is, or would be once created: the real path of its nearest existing ancestor plus the rest.
+ * A dangling link has no real path, but writing through it creates its target, so its target is followed too. */
+function realOrNearest(p: string, links = 0): string {
   let cur = p;
   const tail: string[] = [];
   for (;;) {
@@ -106,11 +111,22 @@ function realOrNearest(p: string): string {
       const real = realpathSync.native(cur);
       return tail.length ? path.join(real, ...tail.reverse()) : real;
     } catch {
+      const target = links < MAX_LINKS ? linkTarget(cur) : undefined;
+      if (target) return realOrNearest(path.join(target, ...[...tail].reverse()), links + 1);
       const parent = path.dirname(cur);
       if (parent === cur) return p;
       tail.push(path.basename(cur));
       cur = parent;
     }
+  }
+}
+
+function linkTarget(p: string): string | undefined {
+  try {
+    if (!lstatSync(p).isSymbolicLink()) return undefined;
+    return path.resolve(path.dirname(p), readlinkSync(p));
+  } catch {
+    return undefined;
   }
 }
 

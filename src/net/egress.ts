@@ -103,7 +103,7 @@ export class Egress {
       await res.body?.cancel().catch(() => undefined);
       const next = new URL(location, url).toString();
       this.assertAllowed(next, base);
-      if (hop + 1 >= MAX_REDIRECTS) throw new EgressBlockedError(next, 'too many redirects');
+      if (hop >= MAX_REDIRECTS) throw new EgressBlockedError(next, 'too many redirects');
       url = next;
     }
   }

@@ -24,6 +24,9 @@ Context:
 
 Security:
 
+- A dangling link in the workspace (one whose target does not exist yet) is classified by its target. Before, it counted as a workspace file, so in the auto-accept modes a write through it could create a file outside the workspace without asking.
+- The permission-mode descriptions for the auto-accept modes now say that allow-listed commands such as `npm test` run code the agent can change without asking.
+- Same-origin redirects from Open WebUI are followed up to three times, as intended; the limit was off by one.
 - The permission mode is stored per workspace, so an auto-accept mode chosen in a trusted repository no longer carries over to others. Every workspace starts in **Ask before edits** once after updating.
 - Changes to `.owui/` (project memory and skills, which later sessions load as instructions) always ask, as `.git/` and `.vscode/` already did. `update_memory` therefore asks even in the auto-accept modes.
 - An approval card takes keyboard focus only when nothing else has it, so typing in the composer while the agent works can no longer approve a command by accident.

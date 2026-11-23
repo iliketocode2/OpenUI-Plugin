@@ -68,6 +68,14 @@ describe('Egress', () => {
     expect(f.calls).not.toContain('https://tracker.example/collect');
   });
 
+  it('follows up to three redirects', async () => {
+    const chain = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`http://localhost:8090/api/r${i}`, { status: 302, location: `/api/r${i + 1}` }]));
+    const e3 = new Egress(() => 'http://localhost:8090', fakeFetch(chain(3)).impl);
+    expect((await e3.request('/api/r0')).status).toBe(200);
+    const e4 = new Egress(() => 'http://localhost:8090', fakeFetch(chain(4)).impl);
+    await expect(e4.request('/api/r0')).rejects.toThrow(/too many redirects/);
+  });
+
   it('stops redirect loops', async () => {
     const f = fakeFetch({ 'http://localhost:8090/api/loop': { status: 302, location: '/api/loop' } });
     const e = new Egress(() => 'http://localhost:8090', f.impl);

@@ -384,8 +384,8 @@ function AssistantItem({ item }: { item: Extract<TranscriptItem, { kind: 'assist
 const MODES: { id: AgentMode; label: string; hint: string }[] = [
   { id: 'plan', label: 'Plan', hint: 'Read-only: the agent investigates, asks questions and replies with a plan. Switch mode when you want it implemented.' },
   { id: 'ask', label: 'Ask before edits', hint: 'Every file change and every command that is not allow-listed asks for approval.' },
-  { id: 'auto', label: 'Auto-accept edits', hint: 'File changes inside the workspace apply immediately. Commands still ask unless allow-listed.' },
-  { id: 'review', label: 'Auto-accept, review at end', hint: 'File changes apply immediately; when the agent finishes you keep or revert each changed file. Commands still ask unless allow-listed.' },
+  { id: 'auto', label: 'Auto-accept edits', hint: 'File changes inside the workspace apply immediately. Commands still ask unless allow-listed. Allow-listed commands such as npm test then run code the agent can change without asking, so use this only in repositories you trust.' },
+  { id: 'review', label: 'Auto-accept, review at end', hint: 'File changes apply immediately; when the agent finishes you keep or revert each changed file. Commands still ask unless allow-listed. Allow-listed commands such as npm test then run code the agent can change without asking, so use this only in repositories you trust.' },
 ];
 
 function Composer({
