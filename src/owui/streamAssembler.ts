@@ -16,7 +16,9 @@ interface PartialCall {
   arguments: string;
 }
 
+/** Servers name the reasoning field differently, and some send the same text under two names; the first one wins. */
 const REASONING_FIELDS = ['reasoning_content', 'reasoning', 'thinking'] as const;
+const CLOSE_THINK = '</think>';
 
 type Json = Record<string, unknown>;
 
@@ -50,7 +52,10 @@ function errorMessage(raw: unknown): string | undefined {
 export class StreamAssembler {
   private content = '';
   private reasoning = '';
+  /** Tool calls in arrival order, keyed by slot; `slots` maps the server's index to the slot it currently fills. */
   private readonly calls = new Map<number, PartialCall>();
+  private readonly slots = new Map<number, number>();
+  private nextSlot = 0;
   private finishReason: string | null = null;
   private usage: Usage | null = null;
   private readonly splitter = new ThinkTagSplitter();
@@ -69,12 +74,10 @@ export class StreamAssembler {
       if (typeof choice.finish_reason === 'string') this.finishReason = choice.finish_reason;
       const delta = isObject(choice.delta) ? choice.delta : isObject(choice.message) ? choice.message : undefined;
       if (!delta) continue;
-      for (const field of REASONING_FIELDS) {
-        const r = delta[field];
-        if (typeof r === 'string' && r) {
-          this.reasoning += r;
-          out.push({ kind: 'reasoning', text: r });
-        }
+      const r = REASONING_FIELDS.map((field) => delta[field]).find((v): v is string => typeof v === 'string' && v !== '');
+      if (r) {
+        this.reasoning += r;
+        out.push({ kind: 'reasoning', text: r });
       }
       if (typeof delta.content === 'string' && delta.content) {
         for (const piece of this.splitter.push(delta.content)) out.push(this.applyPiece(piece));
@@ -86,6 +89,13 @@ export class StreamAssembler {
 
   finish(): AssistantTurn {
     this.flushPending();
+    // Chat templates that put <think> in the prompt make the model answer "reasoning…</think>answer", with no opening
+    // tag to split on. Only when no reasoning arrived any other way, so a literal </think> in an answer survives.
+    const close = this.reasoning ? -1 : this.content.indexOf(CLOSE_THINK);
+    if (close !== -1) {
+      this.reasoning = this.content.slice(0, close).trim();
+      this.content = this.content.slice(close + CLOSE_THINK.length).replace(/^\s+/, '');
+    }
     return {
       content: this.content,
       reasoning: this.reasoning,
@@ -108,7 +118,7 @@ export class StreamAssembler {
   private pushToolCalls(list: unknown[]): void {
     list.forEach((raw, position) => {
       if (!isObject(raw)) return;
-      const index = typeof raw.index === 'number' ? raw.index : this.nextIndexFor(raw, position);
+      const index = this.slotFor(raw, position);
       const cur = this.calls.get(index) ?? { id: '', name: '', arguments: '' };
       if (typeof raw.id === 'string' && raw.id) cur.id = raw.id;
       const fn = isObject(raw.function) ? raw.function : undefined;
@@ -122,12 +132,20 @@ export class StreamAssembler {
     });
   }
 
-  private nextIndexFor(raw: Json, position: number): number {
-    if (typeof raw.id === 'string' && raw.id) {
-      for (const [i, c] of this.calls) if (c.id === raw.id) return i;
-      return this.calls.size;
+  private slotFor(raw: Json, position: number): number {
+    const id = typeof raw.id === 'string' && raw.id ? raw.id : undefined;
+    if (typeof raw.index !== 'number' && id) {
+      for (const [slot, c] of this.calls) if (c.id === id) return slot;
+      return this.nextSlot++;
     }
-    return position;
+    const index = typeof raw.index === 'number' ? raw.index : position;
+    const slot = this.slots.get(index);
+    const existing = slot === undefined ? undefined : this.calls.get(slot);
+    // Some servers give every call index 0: a new id at a used index starts a new call instead of extending the old one.
+    if (slot !== undefined && !(id && existing?.id && existing.id !== id)) return slot;
+    const fresh = this.nextSlot++;
+    this.slots.set(index, fresh);
+    return fresh;
   }
 
   private toolCalls(): AssembledToolCall[] {

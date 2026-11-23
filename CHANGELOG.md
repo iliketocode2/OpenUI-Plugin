@@ -6,6 +6,17 @@ Tool calling:
 
 - The text-based tool protocol and the automatic fallback to it are gone, along with the per-model `toolMode` setting. The agent uses native tool calling only; a model whose server rejects tools now gets a clear error instead of a silent switch. The fallback could run a tool call the model had only shown as an example inside a code fence, and an unrelated error that mentioned "tool calling" switched the rest of the run to text mode.
 
+Fixes:
+
+- Reasoning no longer appears twice when a server sends the same text as both `reasoning_content` and `reasoning`.
+- When a chat template puts `<think>` in the prompt, so the model's reply is `reasoning…</think>answer`, the reasoning is shown as reasoning and no longer sent back as part of the answer.
+- Tool calls stay separate when a server gives every call the same index. Before, their arguments were joined into invalid JSON.
+- Text added with **Add Selection to Chat**, and the history panel opened from its command, are no longer lost when the chat view was hidden and has to reload first.
+- Changing a setting reconnects to Open WebUI only for the base URL and web access. Before, every change, including ticking **Local**, choosing a context size or **Always allow**, fetched the model list again, and so did every reopening of the chat view.
+- Esc stops the agent from anywhere in the chat view, but no longer when it closes the history panel or is pressed in a text field.
+- The browser tool opens a new page after the app closes its window, and a new browser after the browser exits. Before, every later action failed with "Target page, context or browser has been closed".
+- Rewind and review treat `src/A.ts` and `SRC/a.ts`, or a path through a folder link, as one file. Before, a rewind could restore an intermediate version.
+
 Settings:
 
 - Five settings are gone. VS Code ignores them if they are still in your settings file.

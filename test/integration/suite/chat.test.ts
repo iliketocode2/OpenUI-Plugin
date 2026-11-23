@@ -171,6 +171,21 @@ describe('OWUI Agent chat (integration)', () => {
     assert.equal(api.controller.viewState().sovereignty, 'unverified');
   });
 
+  it('reconnects when the base URL changes, but not for settings that only change the view', async () => {
+    const modelRequests = () => mock.requests.filter((r) => r.path === '/api/models').length;
+    const before = modelRequests();
+    await configure({ 'agent.maxIterations': 51 });
+    await api.controller.setModelLocal('chat-model', true);
+    await api.controller.setModelLocal('chat-model', false);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(modelRequests(), before);
+    await configure({ 'agent.maxIterations': undefined });
+    await configure({ baseUrl: `${mock.baseUrl}/` });
+    for (let waited = 0; modelRequests() === before && waited < 5000; waited += 25) await new Promise((r) => setTimeout(r, 25));
+    assert.ok(modelRequests() > before, 'changing the base URL should reconnect');
+    await configure({ baseUrl: mock.baseUrl });
+  });
+
   it('stores the API key only in SecretStorage, never in settings', () => {
     const all = JSON.stringify(vscode.workspace.getConfiguration('owuiAgent'));
     assert.ok(!all.includes(KEY));

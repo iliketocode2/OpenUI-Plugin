@@ -134,11 +134,6 @@
     },
     "keybindings": [
       {
-        "command": "owuiAgent.stop",
-        "key": "escape",
-        "when": "focusedView == owuiAgent.chat"
-      },
-      {
         "command": "owuiAgent.addSelection",
         "key": "ctrl+alt+k",
         "mac": "cmd+alt+k",

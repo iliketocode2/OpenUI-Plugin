@@ -12,9 +12,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private view: vscode.WebviewView | undefined;
   private readonly pendingDeltas = new Map<string, { id: string; kind: StreamDelta['kind']; text: string }>();
   private readonly pendingTools = new Map<string, ToolCardUpdate>();
-  private readonly queuedInserts: string[] = [];
+  /** Whether the page has said it is listening. VS Code discards a hidden view's page and loads it again when the view
+   * is shown, so this goes false whenever the view hides. */
+  private ready = false;
+  /** Messages for the page that arrived while it was not listening; sent on the next `ready`. */
+  private readonly queued: ToWebview[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
-  private readonly disposables: vscode.Disposable[] = [];
+  private viewDisposables: vscode.Disposable[] = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -37,12 +41,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         this.pendingTools.set(id, { ...this.pendingTools.get(id), ...patch });
         this.schedule();
       },
-      history: (entries, query) => this.post({ type: 'history', entries, query }),
+      history: (entries, query) => this.postWhenReady({ type: 'history', entries, query }),
     });
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
+    this.ready = false;
     const root = vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview');
     view.webview.options = { enableScripts: true, enableCommandUris: false, localResourceRoots: [root] };
     view.webview.html = renderHtml({
@@ -51,37 +56,50 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       scriptUri: view.webview.asWebviewUri(vscode.Uri.joinPath(root, 'main.js')).toString(),
       styleUri: view.webview.asWebviewUri(vscode.Uri.joinPath(root, 'styles.css')).toString(),
     });
-    this.disposables.push(
+    for (const d of this.viewDisposables) d.dispose();
+    this.viewDisposables = [
       view.webview.onDidReceiveMessage((m: FromWebview) => void this.onMessage(m)),
+      view.onDidChangeVisibility(() => {
+        if (!view.visible) this.ready = false;
+      }),
       view.onDidDispose(() => {
         this.view = undefined;
+        this.ready = false;
+        for (const d of this.viewDisposables) d.dispose();
+        this.viewDisposables = [];
       }),
-    );
+    ];
   }
 
   async showHistory(): Promise<void> {
-    if (!this.view) await vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
-    this.view?.show(true);
-    this.post({ type: 'showHistory' });
+    this.postWhenReady({ type: 'showHistory' });
+    await this.reveal();
     await this.controller.listHistory();
   }
 
   async insertText(text: string): Promise<void> {
-    if (!this.view) {
-      this.queuedInserts.push(text);
-      await vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
-      return;
-    }
-    this.view.show(true);
-    this.post({ type: 'insertText', text });
+    this.postWhenReady({ type: 'insertText', text });
+    await this.reveal();
+  }
+
+  private async reveal(): Promise<void> {
+    if (this.view) this.view.show(true);
+    else await vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
+  }
+
+  /** For messages that must reach the page, such as text to insert: they wait while the page is (re)loading. */
+  private postWhenReady(msg: ToWebview): void {
+    if (this.view && this.ready) this.post(msg);
+    else this.queued.push(msg);
   }
 
   private async onMessage(m: FromWebview): Promise<void> {
     switch (m.type) {
       case 'ready':
+        this.ready = true;
         this.controller.emitState();
-        for (const text of this.queuedInserts.splice(0)) this.post({ type: 'insertText', text });
-        void this.controller.refresh();
+        for (const msg of this.queued.splice(0)) this.post(msg);
+        void this.controller.ensureConnected();
         return;
       case 'send':
         await this.controller.send(m.text);
@@ -181,7 +199,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   dispose(): void {
     this.controller.setListener(undefined);
     if (this.flushTimer) clearTimeout(this.flushTimer);
-    for (const d of this.disposables) d.dispose();
+    for (const d of this.viewDisposables) d.dispose();
   }
 }
 

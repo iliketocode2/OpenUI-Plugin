@@ -19,3 +19,14 @@ export class EventEmitter<T> {
 }
 
 export const ConfigurationTarget = { Global: 1, Workspace: 2, WorkspaceFolder: 3 };
+
+export const Uri = {
+  joinPath: (base: { path: string }, ...parts: string[]) => ({ path: [base.path, ...parts].join('/'), toString: () => [base.path, ...parts].join('/') }),
+};
+
+export const commands = {
+  executed: [] as string[],
+  executeCommand: async (id: string) => {
+    commands.executed.push(id);
+  },
+};

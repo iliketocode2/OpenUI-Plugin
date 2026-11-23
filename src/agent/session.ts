@@ -30,7 +30,7 @@ import type { ProcessManager } from '../tools/shell/processManager';
 import type { ShellRegistry } from '../tools/shell/shells';
 import { isPrepared, type ImageAttachment, type Tool, type ToolContext, type ToolResult, type ToolSettings } from '../tools/types';
 import { coerceArgs, parseArguments, validateArgs } from '../tools/validate';
-import type { PathGuard } from '../workspace/paths';
+import { realPath, type PathGuard } from '../workspace/paths';
 import { decide } from './permissions';
 import { modeNote } from './systemPrompt';
 import { describeError, log } from '../log';
@@ -479,7 +479,9 @@ export class AgentSession {
   private lastDiffFor(absolute: string): string | undefined {
     for (let i = this.transcript.length - 1; i >= 0; i--) {
       const t = this.transcript[i]!;
-      if (t.kind === 'tool' && t.diffId && t.status === 'done' && this.env.diffs.get(t.diffId)?.absolute === absolute) return t.diffId;
+      if (t.kind !== 'tool' || !t.diffId || t.status !== 'done') continue;
+      const diff = this.env.diffs.get(t.diffId);
+      if (diff && realPath(diff.absolute) === absolute) return t.diffId;
     }
     return undefined;
   }

@@ -110,7 +110,7 @@ export function activate(context: vscode.ExtensionContext): TestApi | undefined 
       return provider.insertText(`${targets.map((u) => `@${vscode.workspace.asRelativePath(u, false).split(path.sep).join('/')}`).join(' ')} `);
     }),
     keys.onDidChange(() => void controller.refresh()),
-    onSettingsChanged(() => void controller.refresh()),
+    onSettingsChanged((reconnect) => (reconnect ? void controller.refresh() : controller.emitState())),
   );
 
   shutdown = async () => {

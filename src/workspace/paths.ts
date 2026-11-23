@@ -94,6 +94,12 @@ function canonical(p: string): string {
   return n.length > 1 && /[\\/]$/.test(n) && !/^[A-Za-z]:\\$/.test(n) ? n.slice(0, -1) : n;
 }
 
+/** The one spelling of a file's path: the true case on case-insensitive disks, with links resolved. Two paths to the
+ * same file give the same result, also for a file that does not exist yet. */
+export function realPath(p: string): string {
+  return realOrNearest(canonical(p));
+}
+
 /** Links followed before giving up, as the OS does for a cycle. */
 const MAX_LINKS = 40;
 

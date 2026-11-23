@@ -102,6 +102,20 @@ describe('browser tool egress (headless Chrome/Edge)', () => {
     await expect(session.navigate(`http://127.0.0.1:${port}/`)).rejects.toThrow(/Nothing is listening/);
   }, 60_000);
 
+  it('opens a new page after the page closes, and a new browser after the browser exits', async () => {
+    const internals = session as unknown as { page: { close(): Promise<void> }; context: { close(): Promise<void> }; proxy: unknown };
+    await session.navigate(`${base}/`);
+    const proxyBefore = internals.proxy;
+    await internals.page.close();
+    expect((await session.navigate(`${base}/`)).status).toBe(200);
+    expect(internals.proxy).toBe(proxyBefore);
+
+    await internals.context.close();
+    expect((await session.navigate(`${base}/`)).status).toBe(200);
+    expect(internals.proxy).not.toBe(proxyBefore);
+    expect(await session.text('h1')).toBeTruthy();
+  }, 120_000);
+
   it('deletes its temporary profile on close', async () => {
     expect(existsSync(path.join(profileRoot, 'profile'))).toBe(true);
     await session.close();

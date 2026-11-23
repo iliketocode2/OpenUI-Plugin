@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rm, truncate, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -28,6 +28,32 @@ async function agentWrite(rel: string, content: string): Promise<void> {
   await writeFile(file(rel), content);
   await m.recordAfterWrite(file(rel));
 }
+
+describe('CheckpointManager with one file reached by two paths', () => {
+  it.runIf(process.platform === 'win32' || process.platform === 'darwin')('treats paths that differ only in case as one file', async () => {
+    await mkdir(file('src'));
+    await writeFile(file('src/A.ts'), 'original');
+    const cp1 = m.begin('one');
+    await agentWrite('src/A.ts', 'first edit');
+    m.begin('two');
+    await agentWrite('SRC/a.ts', 'second edit');
+    expect((await m.plan(cp1.id)).map((c) => path.basename(c.absolute))).toEqual(['A.ts']);
+    await m.rewind(cp1.id);
+    expect(await readFile(file('src/A.ts'), 'utf8')).toBe('original');
+  });
+
+  it('treats a path through a folder link as the file it points to', async () => {
+    await mkdir(file('real'));
+    await writeFile(file('real/f.txt'), 'original');
+    await symlink(file('real'), file('link'), process.platform === 'win32' ? 'junction' : 'dir');
+    const cp1 = m.begin('one');
+    await agentWrite('link/f.txt', 'first edit');
+    m.begin('two');
+    await agentWrite('real/f.txt', 'second edit');
+    await m.rewind(cp1.id);
+    expect(await readFile(file('real/f.txt'), 'utf8')).toBe('original');
+  });
+});
 
 describe('CheckpointManager', () => {
   it('restores and deletes only the files the agent wrote, across several checkpoints', async () => {

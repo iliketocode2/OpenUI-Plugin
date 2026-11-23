@@ -61,6 +61,42 @@ describe('StreamAssembler with synthetic streams', () => {
     ]);
   });
 
+  it('takes reasoning from one field when a server sends the same text in several', () => {
+    const a = new StreamAssembler();
+    const deltas = [
+      ...a.pushChunk({ choices: [{ index: 0, delta: { reasoning_content: 'Let me ', reasoning: 'Let me ' } }] }),
+      ...a.pushChunk({ choices: [{ index: 0, delta: { reasoning_content: 'think.', reasoning: 'think.' } }] }),
+      ...a.pushChunk({ choices: [{ index: 0, delta: { content: 'Hi' } }] }),
+    ];
+    expect(a.finish()).toMatchObject({ reasoning: 'Let me think.', content: 'Hi' });
+    expect(deltas.filter((d) => d.kind === 'reasoning').map((d) => d.text).join('')).toBe('Let me think.');
+  });
+
+  it('treats text before a closing </think> as reasoning when the opening tag was in the prompt', () => {
+    const a = new StreamAssembler();
+    for (const content of ['The user wants ', 'a greeting.</th', 'ink>\n\nHello!']) a.pushChunk({ choices: [{ index: 0, delta: { content } }] });
+    expect(a.finish()).toMatchObject({ reasoning: 'The user wants a greeting.', content: 'Hello!' });
+  });
+
+  it('keeps a literal </think> in the answer when the reasoning came separately', () => {
+    const a = new StreamAssembler();
+    a.pushChunk({ choices: [{ index: 0, delta: { reasoning_content: 'why' } }] });
+    a.pushChunk({ choices: [{ index: 0, delta: { content: 'Qwen closes its reasoning with </think>.' } }] });
+    expect(a.finish()).toMatchObject({ reasoning: 'why', content: 'Qwen closes its reasoning with </think>.' });
+  });
+
+  it('keeps tool calls apart when a server numbers every call 0', () => {
+    const a = new StreamAssembler();
+    a.pushChunk({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'read_file', arguments: '{"path":' } }] } }] });
+    a.pushChunk({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '"a.ts"}' } }] } }] });
+    a.pushChunk({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'c2', function: { name: 'glob', arguments: '{"pattern":"*"}' } }] } }] });
+    a.pushChunk({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'c2', function: { arguments: '' } }] } }] });
+    expect(a.finish().toolCalls).toEqual([
+      { id: 'c1', name: 'read_file', arguments: '{"path":"a.ts"}' },
+      { id: 'c2', name: 'glob', arguments: '{"pattern":"*"}' },
+    ]);
+  });
+
   it('accepts tool calls without index and object arguments', () => {
     const a = new StreamAssembler();
     a.pushChunk({ choices: [{ delta: { tool_calls: [{ id: 'x', function: { name: 'f', arguments: { a: 1 } } }, { id: 'y', function: { name: 'g' } }] } }] });

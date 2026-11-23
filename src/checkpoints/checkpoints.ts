@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { SerializedCheckpoint } from '../storage/history';
+import { realPath } from '../workspace/paths';
 
 /**
  * Rewind undoes the agent's own file edits (write_file, edit_file, update_memory) by restoring the content each file
@@ -59,7 +60,9 @@ export class CheckpointManager {
     return cp;
   }
 
-  async recordBeforeWrite(absolute: string): Promise<void> {
+  /** Files are keyed by their real path, so `src/A.ts` and `SRC/a.ts`, or a path through a link, share one backup. */
+  async recordBeforeWrite(written: string): Promise<void> {
+    const absolute = realPath(written);
     const cp = this.current();
     if (!cp || cp.originals.has(absolute)) return;
     try {
@@ -79,7 +82,8 @@ export class CheckpointManager {
     }
   }
 
-  async recordAfterWrite(absolute: string): Promise<void> {
+  async recordAfterWrite(written: string): Promise<void> {
+    const absolute = realPath(written);
     const cp = this.current();
     if (cp) cp.written.set(absolute, await contentHash(absolute));
   }
@@ -124,7 +128,8 @@ export class CheckpointManager {
   }
 
   /** Restores one file to its state at checkpoint `id`. Returns false when there is nothing to restore it from. */
-  async revertFile(id: string, absolute: string): Promise<boolean> {
+  async revertFile(id: string, file: string): Promise<boolean> {
+    const absolute = realPath(file);
     const start = this.checkpoints.findIndex((c) => c.id === id);
     if (start === -1) return false;
     let backup: string | null | undefined;

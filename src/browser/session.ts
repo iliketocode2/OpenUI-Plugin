@@ -50,6 +50,8 @@ export class BrowserSession {
   private page: Page | undefined;
   private starting: Promise<Page> | undefined;
   private proxy: BlackholeProxy | undefined;
+  /** False once the browser has exited (it crashed, or was closed), so the next action starts a new one. */
+  private contextAlive = false;
   channelUsed: string | undefined;
   readonly logs = { console: [] as string[], errors: [] as string[], failed: [] as string[], blocked: [] as string[] };
 
@@ -158,10 +160,16 @@ export class BrowserSession {
   }
 
   async close(): Promise<void> {
+    this.starting = undefined;
+    await this.teardown();
+  }
+
+  /** Closes the browser and its proxy and deletes the profile, which a new browser could not use while it is locked. */
+  private async teardown(): Promise<void> {
     const ctx = this.context;
     this.context = undefined;
+    this.contextAlive = false;
     this.page = undefined;
-    this.starting = undefined;
     await ctx?.close().catch(() => undefined);
     await this.proxy?.stop().catch(() => undefined);
     this.proxy = undefined;
@@ -175,11 +183,17 @@ export class BrowserSession {
 
   private ensure(): Promise<Page> {
     if (this.page && !this.page.isClosed()) return Promise.resolve(this.page);
-    this.starting ??= this.launch().catch((e) => {
+    this.starting ??= this.open().finally(() => {
       this.starting = undefined;
-      throw e;
     });
     return this.starting;
+  }
+
+  /** The page can close (window.close() in the app, a crashed tab) while the browser runs on; the browser can exit too. */
+  private async open(): Promise<Page> {
+    if (this.context && this.contextAlive) return this.watch(await this.context.newPage());
+    await this.teardown();
+    return this.launch();
   }
 
   private async launch(): Promise<Page> {
@@ -205,6 +219,11 @@ export class BrowserSession {
           timeout: 60_000,
         });
         this.channelUsed = channel;
+        this.contextAlive = true;
+        const ctx = this.context;
+        ctx.on('close', () => {
+          if (this.context === ctx) this.contextAlive = false;
+        });
         break;
       } catch (e) {
         failures.push(`${channel}: ${(e as Error).message.split('\n')[0]}`);
@@ -230,16 +249,21 @@ export class BrowserSession {
         ws.close({ code: 1008, reason: 'Blocked by OWUI Agent' });
       }
     });
-    this.page = this.context.pages()[0] ?? (await this.context.newPage());
-    this.page.on('console', (m) => pushCapped(this.logs.console, `[${m.type()}] ${m.text()}`));
-    this.page.on('pageerror', (e) => pushCapped(this.logs.errors, e.message));
-    this.page.on('requestfailed', (r) => {
+    return this.watch(this.context.pages()[0] ?? (await this.context.newPage()));
+  }
+
+  /** Makes `page` the current page and collects its logs. Request blocking is set on the browser, so it covers every page. */
+  private watch(page: Page): Page {
+    this.page = page;
+    page.on('console', (m) => pushCapped(this.logs.console, `[${m.type()}] ${m.text()}`));
+    page.on('pageerror', (e) => pushCapped(this.logs.errors, e.message));
+    page.on('requestfailed', (r) => {
       const reason = r.failure()?.errorText ?? 'failed';
       if (!/ERR_BLOCKED_BY_CLIENT/.test(reason)) pushCapped(this.logs.failed, `${r.method()} ${r.url()} — ${reason}`);
     });
-    this.page.on('response', (r) => {
+    page.on('response', (r) => {
       if (r.status() >= 400) pushCapped(this.logs.failed, `${r.request().method()} ${r.url()} — HTTP ${r.status()}`);
     });
-    return this.page;
+    return page;
   }
 }

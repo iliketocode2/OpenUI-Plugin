@@ -150,6 +150,12 @@ export class AgentController implements vscode.Disposable {
     this.emitState();
   }
 
+  /** Connects unless connected or connecting already, so showing the view again does not fetch everything again. */
+  async ensureConnected(): Promise<void> {
+    if (this.connection.status === 'ok' || this.connection.status === 'connecting') return;
+    await this.refresh();
+  }
+
   async selectModel(id: string): Promise<void> {
     if (!this.serverModels.some((m) => m.id === id)) return;
     await this.deps.globalState.update(STATE_MODEL, id);

@@ -59,9 +59,12 @@ export async function addAllowlistEntry(entry: string): Promise<void> {
   await c.update('commands.allowlist', [...current, entry], vscode.ConfigurationTarget.Global);
 }
 
-export function onSettingsChanged(listener: () => void): vscode.Disposable {
+/** Settings whose change needs a new connection to Open WebUI. The others only change what the view shows. */
+const RECONNECT_SETTINGS = ['baseUrl', 'web.enabled'];
+
+export function onSettingsChanged(listener: (reconnect: boolean) => void): vscode.Disposable {
   return vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration(SECTION)) listener();
+    if (e.affectsConfiguration(SECTION)) listener(RECONNECT_SETTINGS.some((k) => e.affectsConfiguration(`${SECTION}.${k}`)));
   });
 }
 

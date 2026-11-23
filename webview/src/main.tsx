@@ -51,6 +51,20 @@ function App() {
 
   const busy = state?.busy ?? false;
   const prevBusy = useRef(busy);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  // Esc stops the agent from anywhere in the view, unless something else used the key first: closing the history,
+  // or a text field. A VS Code keybinding would fire for those too, and stop a run by accident.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || !busyRef.current) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      post({ type: 'stop' });
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
   const waiting = state?.transcript.some((t) => (t.kind === 'tool' && t.status === 'awaiting-approval') || (t.kind === 'question' && t.status === 'open')) ?? false;
   useEffect(() => {
     if (waiting) setAnnouncement('The agent is waiting for your input.');
