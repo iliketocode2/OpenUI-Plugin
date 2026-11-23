@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SUMMARY_PREFIX, compact, cutPoints, elideOldToolResults, isToolResultMessage, renderTranscript } from '../../src/agent/compaction';
+import { SUMMARY_PREFIX, compact, cutPoints, elideOldToolResults, renderTranscript } from '../../src/agent/compaction';
 import type { WireMessage } from '../../src/owui/types';
 
 const big = (n: number, ch = 'x') => ch.repeat(n);
@@ -28,26 +28,20 @@ function assertValid(wire: WireMessage[]): void {
 }
 
 describe('elideOldToolResults', () => {
-  it('shortens old native and text-protocol results but keeps recent ones', () => {
+  it('shortens old tool results and drops old images but keeps recent ones', () => {
+    const image = { type: 'image_url' as const, image_url: { url: 'data:image/png;base64,AAAA' } };
     const wire: WireMessage[] = [
       ...nativeTurn(1),
-      { role: 'user', content: `<tool_result name="grep" id="t1">\n${big(3000)}\n</tool_result>` },
-      { role: 'user', content: [{ type: 'text', text: '<tool_result name="view_image" id="t2">\nok\n</tool_result>' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }] },
+      { role: 'user', content: [{ type: 'text', text: 'Images requested with view_image: a.png' }, image] },
       ...nativeTurn(2),
+      { role: 'user', content: [{ type: 'text', text: 'Images requested with view_image: b.png' }, image] },
     ];
     const { wire: out, changed } = elideOldToolResults(wire, 4);
-    expect(changed).toBe(3);
-    expect(String(out[2]!.content)).toMatch(/characters of old tool output removed/);
-    expect(String(out[4]!.content)).toMatch(/^<tool_result name="grep" id="t1">\nx{300}\n… \[2700 characters/);
-    expect(String(out[4]!.content)).toMatch(/<\/tool_result>$/);
-    expect(JSON.stringify(out[5]!.content)).toContain('[image removed to save context]');
-    expect(out[8]!.content).toBe(wire[8]!.content);
-  });
-
-  it('recognises tool result messages', () => {
-    expect(isToolResultMessage({ role: 'tool', tool_call_id: 'x', content: 'y' })).toBe(true);
-    expect(isToolResultMessage({ role: 'user', content: '  <tool_result name="a">' })).toBe(true);
-    expect(isToolResultMessage({ role: 'user', content: 'hello' })).toBe(false);
+    expect(changed).toBe(2);
+    expect(String(out[2]!.content)).toMatch(/^1{300}\n… \[3700 characters of old tool output removed/);
+    expect(out[4]!.content).toEqual([{ type: 'text', text: 'Images requested with view_image: a.png' }, { type: 'text', text: '[image removed to save context]' }]);
+    expect(out[7]!.content).toBe(wire[7]!.content);
+    expect(out[9]!.content).toBe(wire[9]!.content);
   });
 });
 

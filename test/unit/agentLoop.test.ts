@@ -26,7 +26,7 @@ async function harness(opts: Partial<HarnessOptions> = {}): Promise<Harness> {
   return h;
 }
 
-function body(i: number): { messages: WireMessage[]; tools?: unknown[]; stop?: string[]; params?: unknown } {
+function body(i: number): { messages: WireMessage[]; tools?: unknown[]; params?: unknown } {
   return mock.chatRequests()[i]!.body as never;
 }
 
@@ -245,39 +245,16 @@ describe('agent loop (native tool calls)', () => {
   });
 });
 
-describe('agent loop (text tool protocol)', () => {
-  it('runs tools from <agent_tool> blocks and returns <tool_result> blocks', async () => {
-    const t = await harness({ override: { toolMode: 'text' }, mode: 'auto', allowlist: ['echo'] });
-    mock.enqueue(
-      say('Creating the file.\n<agent_tool>\n{"name": "write_file", "arguments": {"path": "t.txt", "content": "hello"}}\n</agent_tool>'),
-      say('Checking.\n<agent_tool>{"name":"run_command","arguments":{"command":"echo checked","description":"Echo"}}</agent_tool>'),
-      say('All done.'),
-    );
-    await t.session.send('make t.txt', t.ctx);
-    expect(await readFile(path.join(t.workspace, 't.txt'), 'utf8')).toBe('hello');
-    expect(body(0).tools).toBeUndefined();
-    expect(body(0).stop).toEqual(['<tool_result']);
-    expect(String(body(0).messages[0]!.content)).toContain('<agent_tool>');
-    const results = String(body(1).messages.at(-1)!.content);
-    expect(results).toMatch(/^<tool_result name="write_file" id="[^"]+">\nCreated t.txt/);
-    expect(String(body(2).messages.at(-1)!.content)).toContain('checked');
-    const shown = t.session.transcript.filter((x) => x.kind === 'assistant').map((x) => (x as { text: string }).text);
-    expect(shown).toEqual(['Creating the file.\n', 'Checking.\n', 'All done.']);
-    expect(shown.join('')).not.toContain('agent_tool');
-  });
-
-  it('switches automatically when the server rejects native tools', async () => {
+describe('agent loop (models without tool support)', () => {
+  it('reports a clear error, once, when the server rejects native tools', async () => {
     const t = await harness();
-    mock.enqueue(
-      { kind: 'json', status: 400, body: { detail: 'registry.ollama.ai/library/old-model does not support tools' } },
-      say('<agent_tool>{"name":"read_file","arguments":{"path":"."}}</agent_tool>'),
-      say('listed'),
-    );
+    mock.enqueue({ kind: 'json', status: 400, body: { detail: 'registry.ollama.ai/library/old-model does not support tools' } });
     await t.session.send('list', t.ctx);
-    expect(t.textModeSwitches).toBe(1);
+    expect(mock.chatRequests()).toHaveLength(1);
     expect(body(0).tools).toBeDefined();
-    expect(body(1).tools).toBeUndefined();
-    expect(tools(t.session).map((c) => c.status)).toEqual(['done']);
-    expect(t.warnings.join(' ')).toMatch(/text-based tool protocol/);
+    const errors = t.session.transcript.filter((i) => i.kind === 'error').map((i) => (i as { text: string }).text);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/does not support tool calling/);
+    expect(t.session.transcript.some((i) => i.kind === 'assistant')).toBe(false);
   });
 });

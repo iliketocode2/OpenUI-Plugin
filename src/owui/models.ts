@@ -1,5 +1,3 @@
-export type ToolMode = 'auto' | 'native' | 'text';
-
 export interface ServerModel {
   id: string;
   name: string;
@@ -11,7 +9,6 @@ export interface ServerModel {
 }
 
 export interface ModelOverride {
-  toolMode?: ToolMode;
   contextSize?: number;
   vision?: boolean;
   local?: boolean;
@@ -26,7 +23,6 @@ export interface ResolvedModel {
   vision: boolean;
   contextSize: number;
   contextSource: ContextSource;
-  toolMode: ToolMode;
   local: boolean;
   thinking?: boolean;
   usageCapability?: boolean;
@@ -90,7 +86,6 @@ export function resolveModel(server: ServerModel, override: ModelOverride | unde
     vision: override?.vision ?? server.vision ?? false,
     contextSize,
     contextSource,
-    toolMode: override?.toolMode ?? 'auto',
     local: override?.local ?? false,
   };
   if (server.usageCapability !== undefined) resolved.usageCapability = server.usageCapability;

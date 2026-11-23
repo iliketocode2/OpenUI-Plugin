@@ -407,67 +407,6 @@ async function testNativeTool() {
   record('native tool result round-trip', /6,?912/.test(r2.content) ? 'pass' : 'warn', JSON.stringify(r2.content.trim().slice(0, 120)));
 }
 
-const TEXT_VARIANTS = [
-  { id: 'qwen-tag-stop', open: '<tool_call>', close: '</tool_call>', stop: true },
-  { id: 'qwen-tag-nostop', open: '<tool_call>', close: '</tool_call>', stop: false },
-  { id: 'custom-tag', open: '<agent_tool>', close: '</agent_tool>', stop: false },
-];
-
-function textProtocol(v) {
-  return `You can call tools. To call a tool, output exactly:
-${v.open}
-{"name": "<tool name>", "arguments": {<JSON arguments>}}
-${v.close}
-Then stop and wait. The result will arrive in a <tool_result> block.
-Available tools:
-- add: Add two integers. Arguments: {"a": integer, "b": integer}`;
-}
-
-function escapeRe(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-async function testTextVariant(v) {
-  const label = `text-protocol [${v.id}]`;
-  const messages = [
-    { role: 'system', content: `${textProtocol(v)}\nAlways use the add tool for arithmetic.` },
-    { role: 'user', content: 'What is 4321 + 8765?' },
-  ];
-  const extra = v.stop ? { stop: [v.close] } : {};
-  const r = await chat(`text-${v.id}-1`, { messages, ...extra });
-  findings[`text-${v.id}-1`] = shapeSummary(r);
-  const full = r.content.includes(v.open) && !r.content.includes(v.close) ? `${r.content}${v.close}` : r.content;
-  const m = full.match(new RegExp(`${escapeRe(v.open)}\\s*([\\s\\S]*?)\\s*${escapeRe(v.close)}`));
-  if (!m) {
-    const bare = r.content.match(/\{\s*"name"[\s\S]*\}/);
-    record(label, 'fail', `no ${v.open} in content: ${JSON.stringify(r.content.slice(0, 200))}${bare ? ' (bare JSON present: tags were stripped)' : ''}; reasoning mentions tag: ${r.reasoning.includes(v.open)}`);
-    return;
-  }
-  let call;
-  try {
-    call = parseArgs(m[1]);
-  } catch {
-    record(label, 'fail', `bad JSON: ${m[1].slice(0, 200)}`);
-    return;
-  }
-  record(label, 'pass', `${call.name}(${JSON.stringify(call.arguments)})`);
-  messages.push({ role: 'assistant', content: full });
-  messages.push({ role: 'user', content: `<tool_result name="add">${Number(call.arguments.a) + Number(call.arguments.b)}</tool_result>` });
-  const r2 = await chat(`text-${v.id}-2`, { messages, ...extra });
-  findings[`text-${v.id}-2`] = shapeSummary(r2);
-  record(`${label} round-trip`, /13,?086/.test(r2.content) ? 'pass' : 'warn', JSON.stringify(r2.content.trim().slice(0, 120)));
-}
-
-async function testTextProtocol() {
-  for (const v of TEXT_VARIANTS) {
-    try {
-      await testTextVariant(v);
-    } catch (e) {
-      record(`text-protocol [${v.id}]`, 'fail', describeError(e));
-    }
-  }
-}
-
 async function testAgentRoundTrip() {
   const dir = await mkdtemp(join(tmpdir(), 'owui smoke '));
   try {
@@ -600,7 +539,6 @@ async function main() {
     ['models', testModels],
     ['streamed chat', testStreamedChat],
     ['native tool', testNativeTool],
-    ['text protocol', testTextProtocol],
     ['agent round-trip', testAgentRoundTrip],
     ['truncation', testTruncation],
     ['abort', testAbortPropagation],

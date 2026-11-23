@@ -44,7 +44,7 @@ Use HTTPS if Open WebUI is not on the same machine; the panel warns about plain 
 
 ## 3. Choose and tune a model
 
-The agent needs a model that is good at **tool calling**. Recent Qwen, Llama 3.1+, Mistral and similar instruction-tuned models work; very small models (under ~7B parameters) often struggle with multi-step work. Models without native tool calling are supported through a text-based fallback, which the extension enables automatically when the server rejects tools.
+The agent needs a model that is good at **tool calling**. Recent Qwen, Llama 3.1+, Mistral and similar instruction-tuned models work; very small models (under ~7B parameters) often struggle with multi-step work. The model must support native tool calling through Open WebUI; the agent reports an error if the server rejects tools for it.
 
 For Ollama-backed models, set these in **Admin Panel → Settings → Models → (your model) → Advanced Params / Capabilities**:
 

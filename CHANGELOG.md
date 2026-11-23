@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+Tool calling:
+
+- The text-based tool protocol and the automatic fallback to it are gone, along with the per-model `toolMode` setting. The agent uses native tool calling only; a model whose server rejects tools now gets a clear error instead of a silent switch. The fallback could run a tool call the model had only shown as an example inside a code fence, and an unrelated error that mentioned "tool calling" switched the rest of the run to text mode.
+
+Security:
+
+- The permission mode is stored per workspace, so an auto-accept mode chosen in a trusted repository no longer carries over to others. Every workspace starts in **Ask before edits** once after updating.
+- Changes to `.owui/` (project memory and skills, which later sessions load as instructions) always ask, as `.git/` and `.vscode/` already did. `update_memory` therefore asks even in the auto-accept modes.
+- An approval card takes keyboard focus only when nothing else has it, so typing in the composer while the agent works can no longer approve a command by accident.
+- `run_command` returns when the shell exits even if a process it started in the background (`cmd &`, `start /b`) still holds its output open; previously it waited for that process, forever for a server, and Stop could not end the wait. On macOS and Linux, stopping or timing out a command also stops the processes it left behind.
+
 Reliability:
 
 - Each tool result is added to the conversation as soon as the tool finishes, and an unexpected error (for example, saving an **Always allow** entry fails) now ends that tool with an error result instead of leaving the request unanswered and the next request malformed.

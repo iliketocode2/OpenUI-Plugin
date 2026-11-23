@@ -162,18 +162,10 @@
         "owuiAgent.models": {
           "type": "object",
           "default": {},
-          "markdownDescription": "Per-model overrides, keyed by model ID. Fields: `toolMode` (`auto` | `native` | `text`), `contextSize` (tokens; also sent to Ollama as `num_ctx`, so Ollama loads the model with that context), `vision` (boolean), `local` (boolean: you confirm the model runs on infrastructure you control), `thinking` (boolean: `false` asks Ollama models to skip their reasoning phase, which is much faster).",
+          "markdownDescription": "Per-model overrides, keyed by model ID. Fields: `contextSize` (tokens; also sent to Ollama as `num_ctx`, so Ollama loads the model with that context), `vision` (boolean), `local` (boolean: you confirm the model runs on infrastructure you control), `thinking` (boolean: `false` asks Ollama models to skip their reasoning phase, which is much faster).",
           "additionalProperties": {
             "type": "object",
             "properties": {
-              "toolMode": {
-                "type": "string",
-                "enum": [
-                  "auto",
-                  "native",
-                  "text"
-                ]
-              },
               "contextSize": {
                 "type": "integer",
                 "minimum": 512

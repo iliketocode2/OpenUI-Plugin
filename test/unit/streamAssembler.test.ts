@@ -43,12 +43,6 @@ describe('StreamAssembler with recorded Open WebUI 0.12 streams', () => {
     expect(final.toolCalls).toEqual([]);
     expect(final.content).toContain('Hi, sovereign world');
   });
-
-  it('does not find tool calls inside reasoning', () => {
-    const { turn } = replay(loadFixture('live/text-custom-tag-1.response.sse'));
-    expect(turn.toolCalls).toEqual([]);
-    expect(turn.content).toContain('<agent_tool>');
-  });
 });
 
 describe('StreamAssembler with synthetic streams', () => {

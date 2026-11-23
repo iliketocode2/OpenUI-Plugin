@@ -38,7 +38,9 @@ const STATE_MODE = 'owuiAgent.mode';
 const STATE_CALIBRATION = 'owuiAgent.tokenCalibration';
 const STATE_WARNED = 'owuiAgent.warnedOnce';
 const STATE_TOTALS = 'owuiAgent.tokenTotals';
-const STATE_TEXT_MODE = 'owuiAgent.textToolModels';
+/** Keys earlier versions wrote to global state: the permission mode (now per workspace) and the models that used the
+ * removed text tool protocol. */
+const LEGACY_GLOBAL_KEYS = ['owuiAgent.mode', 'owuiAgent.textToolModels'];
 
 export interface TokenTotals {
   prompt: number;
@@ -90,8 +92,7 @@ export class AgentController implements vscode.Disposable {
     this.calibrator = new TokenCalibrator(deps.globalState.get<Record<string, CalibrationState>>(STATE_CALIBRATION, {}));
     this.connection = { baseUrl: '', insecure: false, hasKey: false, status: 'unknown' };
     this.session = this.newAgentSession();
-    // Earlier versions kept the mode globally; drop it so it is not mistaken for this workspace's choice.
-    if (deps.globalState.get(STATE_MODE) !== undefined) void deps.globalState.update(STATE_MODE, undefined);
+    for (const key of LEGACY_GLOBAL_KEYS) if (deps.globalState.get(key) !== undefined) void deps.globalState.update(key, undefined);
   }
 
   setListener(listener: ControllerListener | undefined): void {
@@ -569,12 +570,9 @@ export class AgentController implements vscode.Disposable {
     const shellPref = process.platform === 'win32' ? settings.windowsShell : settings.posixShell;
     const shell = this.deps.shells.pick(shellPref === 'auto' ? undefined : shellPref);
     const folder = vscode.workspace.workspaceFolders?.[0];
-    const textModels = this.deps.globalState.get<string[]>(STATE_TEXT_MODE, []);
-    const toolMode = model.toolMode === 'text' || (model.toolMode === 'auto' && textModels.includes(model.id)) ? 'text' : 'native';
     const scratchpad = this.session.scratchpad;
     return {
       model,
-      toolMode,
       systemPrompt: () =>
         renderSystemPrompt({
           os: `${os.type()} ${os.release()} (${process.platform})`,
@@ -594,9 +592,6 @@ export class AgentController implements vscode.Disposable {
       },
       maxIterations: settings.maxIterations,
       warnOnce: (key, text) => this.warnOnce(key, text),
-      onToolsUnsupported: () => {
-        if (!textModels.includes(model.id)) void this.deps.globalState.update(STATE_TEXT_MODE, [...textModels, model.id]);
-      },
       addAllowlistEntry: (entry) => addAllowlistEntry(entry),
       loadContext: async () => {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -619,7 +614,7 @@ export class AgentController implements vscode.Disposable {
   }
 
   private warnOnce(key: string, text: string): void {
-    const persistent = key.startsWith('usage:') || key.startsWith('textmode:');
+    const persistent = key.startsWith('usage:');
     const warned = this.deps.globalState.get<string[]>(STATE_WARNED, []);
     if (persistent && warned.includes(key)) return;
     if (!persistent && this.session.transcript.some((t) => t.kind === 'warning' && t.id === key)) return;

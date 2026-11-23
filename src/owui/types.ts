@@ -59,7 +59,6 @@ export interface ChatRequest {
   model: string;
   messages: WireMessage[];
   tools?: ToolDefinition[];
-  stop?: string[];
   temperature?: number;
   think?: boolean;
   numCtx?: number;

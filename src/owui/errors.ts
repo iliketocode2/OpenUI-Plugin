@@ -29,7 +29,7 @@ export class HttpError extends Error {
   }
 
   get toolsUnsupported(): boolean {
-    return this.status >= 400 && this.status < 500 && /does not support tools|tools? (?:is|are) not supported|tool[_ ]?calling/i.test(this.body);
+    return this.status >= 400 && this.status < 500 && /does not support tools|tools? (?:is|are) not supported/i.test(this.body);
   }
 }
 

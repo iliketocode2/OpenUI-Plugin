@@ -20,7 +20,6 @@ What the extension cannot guarantee:
 
 - **Chat panel** with streaming Markdown, code highlighting, collapsible reasoning, timestamps and a context-usage meter.
 - **Agent loop** with tools to read, list, find and search files (ripgrep), write and edit files, run commands (Git Bash, PowerShell, cmd, bash, zsh), manage background processes (dev servers), view images, keep a task list, and ask you questions.
-- **Native or text tool calling.** Native tool calling is used when the model supports it, with an automatic fallback to a text-based protocol.
 - **Permission modes:**
   - **Plan:** read-only. The agent investigates and asks questions, then replies with a plan. Switch to another mode when you want it implemented.
   - **Ask before edits** (default): each change is shown as a diff to Apply or Deny.
@@ -58,7 +57,7 @@ For models served by Ollama, turn on the model's **Usage** capability in Open We
 |---|---|---|
 | `owuiAgent.baseUrl` | `http://localhost:3000` | Your Open WebUI URL; the only network destination. |
 | `owuiAgent.defaultModel` | | Model selected by default. |
-| `owuiAgent.models` | `{}` | Per model: `toolMode` (`auto`, `native`, `text`), `contextSize` (sent to Ollama as `num_ctx`; default 16384), `vision`, `local`, `thinking`. |
+| `owuiAgent.models` | `{}` | Per model: `contextSize` (sent to Ollama as `num_ctx`; default 16384), `vision`, `local`, `thinking`. |
 | `owuiAgent.shell.windows` / `.posix` | `auto` | Shell for commands. On Windows, `auto` uses Git Bash when installed, otherwise PowerShell. |
 | `owuiAgent.commands.allowlist` | `[]` | Command prefixes that run without asking, for example `npm test`. User settings only. |
 | `owuiAgent.commands.timeoutSeconds` | `120` | Default command timeout. |
@@ -95,7 +94,7 @@ npm run check           # type-check, lint, all of the above, VS Code integratio
 npm run package         # owui-agent-<version>.vsix (never published)
 ```
 
-- **Unit and egress tests** (Vitest): tool layer, stream parser, text tool-call parser, compaction, permissions, history, and the network-egress guards. The browser tool and its egress guard are tested separately in a real headless browser (`npm run test:browser`).
+- **Unit and egress tests** (Vitest): tool layer, stream parser, compaction, permissions, history, and the network-egress guards. The browser tool and its egress guard are tested separately in a real headless browser (`npm run test:browser`).
 - **Integration tests:** run inside VS Code 1.96 against a mock Open WebUI that replays scripted tool-calling conversations.
 - **Live checks** against a real server (reads `OWUI_BASE_URL`, `OWUI_MODEL` and `OWUI_API_KEY` from the environment):
   - `npm run smoke:live` covers protocol details.

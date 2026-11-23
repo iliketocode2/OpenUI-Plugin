@@ -102,7 +102,6 @@ export class OwuiClient {
       arm();
       const body: Record<string, unknown> = { model: req.model, messages: req.messages, stream: true };
       if (req.tools?.length) body.tools = req.tools;
-      if (req.stop?.length) body.stop = req.stop;
       if (req.temperature !== undefined) body.temperature = req.temperature;
       if (req.maxTokens !== undefined) body.max_tokens = req.maxTokens;
       const params: Record<string, unknown> = {};

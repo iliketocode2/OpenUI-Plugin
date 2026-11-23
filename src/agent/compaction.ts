@@ -27,25 +27,16 @@ function textOf(content: WireMessage['content']): string {
   return content.map((p) => (p.type === 'text' ? p.text : '[image]')).join('\n');
 }
 
-export function isToolResultMessage(m: WireMessage): boolean {
-  if (m.role === 'tool') return true;
-  return m.role === 'user' && textOf(m.content).trimStart().startsWith('<tool_result');
-}
-
 function elideText(text: string): string {
   if (text.length <= ELIDE_OVER) return text;
   return `${text.slice(0, ELIDE_KEEP)}\n… [${text.length - ELIDE_KEEP} characters of old tool output removed to save context; re-run the tool if you need them]`;
-}
-
-function elideTextResults(text: string): string {
-  return text.replace(/(<tool_result[^>]*>\n)([\s\S]*?)(\n<\/tool_result>)/g, (_m, open: string, body: string, close: string) => `${open}${elideText(body)}${close}`);
 }
 
 export function elideOldToolResults(wire: WireMessage[], keepLast: number): { wire: WireMessage[]; changed: number } {
   let changed = 0;
   const limit = Math.max(0, wire.length - keepLast);
   const out = wire.map((m, i) => {
-    if (i >= limit || !isToolResultMessage(m)) return m;
+    if (i >= limit) return m;
     if (m.role === 'tool') {
       const text = textOf(m.content);
       const next = elideText(text);
@@ -53,15 +44,10 @@ export function elideOldToolResults(wire: WireMessage[], keepLast: number): { wi
       changed++;
       return { ...m, content: next };
     }
-    if (typeof m.content === 'string') {
-      const next = elideTextResults(m.content);
-      if (next === m.content) return m;
+    // Images on the wire come from view_image; old ones cost hundreds of tokens each and can be viewed again.
+    if (Array.isArray(m.content) && m.content.some((p) => p.type !== 'text')) {
       changed++;
-      return { ...m, content: next };
-    }
-    if (Array.isArray(m.content)) {
-      changed++;
-      const parts: ContentPart[] = m.content.map((p) => (p.type === 'text' ? { type: 'text', text: elideTextResults(p.text) } : { type: 'text', text: '[image removed to save context]' }));
+      const parts: ContentPart[] = m.content.map((p) => (p.type === 'text' ? p : { type: 'text', text: '[image removed to save context]' }));
       return { ...m, content: parts };
     }
     return m;
@@ -73,7 +59,7 @@ export function cutPoints(wire: WireMessage[]): number[] {
   const points: number[] = [];
   for (let i = 1; i < wire.length; i++) {
     const m = wire[i]!;
-    if (m.role === 'assistant' || (m.role === 'user' && !isToolResultMessage(m))) points.push(i);
+    if (m.role === 'assistant' || m.role === 'user') points.push(i);
   }
   return points;
 }
@@ -82,7 +68,6 @@ export function renderTranscript(messages: WireMessage[]): string {
   return messages
     .map((m) => {
       if (m.role === 'tool') return `TOOL RESULT (${m.tool_call_id ?? ''}):\n${clip(textOf(m.content))}`;
-      if (isToolResultMessage(m)) return `TOOL RESULTS:\n${clip(textOf(m.content))}`;
       const head = m.role === 'user' ? (textOf(m.content).startsWith(SUMMARY_PREFIX) ? 'PREVIOUS SUMMARY' : 'USER') : m.role.toUpperCase();
       const calls = m.tool_calls?.length ? `\nTOOL CALLS: ${m.tool_calls.map((c) => `${c.function.name}(${clip(c.function.arguments, 400)})`).join('; ')}` : '';
       return `${head}:\n${textOf(m.content)}${calls}`;

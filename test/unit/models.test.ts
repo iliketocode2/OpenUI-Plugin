@@ -41,14 +41,13 @@ describe('parseModelList', () => {
 describe('resolveModel', () => {
   it('prefers the user setting, then the server, then a 16k default capped at the model maximum', () => {
     expect(DEFAULT_CONTEXT).toBe(16384);
-    expect(resolveModel({ id: 'm', name: 'm' }, undefined)).toMatchObject({ contextSize: 16384, contextSource: 'default', toolMode: 'auto', local: false });
+    expect(resolveModel({ id: 'm', name: 'm' }, undefined)).toMatchObject({ contextSize: 16384, contextSource: 'default', local: false });
     expect(resolveModel({ id: 'm', name: 'm', maxContext: 8192 }, undefined)).toMatchObject({ contextSize: 8192, contextSource: 'default' });
     expect(resolveModel({ id: 'm', name: 'm', contextSize: 16384 }, undefined)).toMatchObject({ contextSize: 16384, contextSource: 'server' });
-    expect(resolveModel({ id: 'm', name: 'm', contextSize: 16384 }, { contextSize: 8192, local: true, toolMode: 'text' })).toMatchObject({
+    expect(resolveModel({ id: 'm', name: 'm', contextSize: 16384 }, { contextSize: 8192, local: true })).toMatchObject({
       contextSize: 8192,
       contextSource: 'setting',
       local: true,
-      toolMode: 'text',
     });
   });
 });

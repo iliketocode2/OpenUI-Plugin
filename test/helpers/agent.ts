@@ -51,7 +51,6 @@ export interface Harness {
   scratchpad: string;
   approvalsSeen: ToolItem[];
   warnings: string[];
-  textModeSwitches: number;
   allowlist: string[];
   modeHistory: AgentMode[];
   diffs: DiffStore;
@@ -124,7 +123,6 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
   const model = resolveModel({ id: opts.modelId ?? 'mock-model', name: opts.modelId ?? 'Mock Model', contextSize: opts.contextSize ?? 32768, vision: opts.vision ?? false }, opts.override);
   const ctx: RunContext = {
     model,
-    toolMode: model.toolMode === 'text' ? 'text' : 'native',
     systemPrompt: () => renderSystemPrompt({ os: 'test', shell: 'default', shells: shells.available().map((s) => s.id).join(', '), date: '2026-10-14', workspace, scratchpad }),
     calibrator: new TokenCalibrator(),
     mode: () => mode,
@@ -132,9 +130,6 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
     toolSettings: { commandTimeoutSeconds: 30, maxOutputChars: 8000, defaultShell: undefined },
     maxIterations: opts.maxIterations ?? 20,
     warnOnce: (_k, text) => warnings.push(text),
-    onToolsUnsupported: () => {
-      harness.textModeSwitches++;
-    },
     addAllowlistEntry: async (e) => {
       allowlist.push(e);
     },
@@ -158,7 +153,6 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
     scratchpad,
     approvalsSeen,
     warnings,
-    textModeSwitches: 0,
     allowlist,
     modeHistory,
     diffs,
