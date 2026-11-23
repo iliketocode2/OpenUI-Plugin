@@ -90,6 +90,8 @@ export class AgentController implements vscode.Disposable {
     this.calibrator = new TokenCalibrator(deps.globalState.get<Record<string, CalibrationState>>(STATE_CALIBRATION, {}));
     this.connection = { baseUrl: '', insecure: false, hasKey: false, status: 'unknown' };
     this.session = this.newAgentSession();
+    // Earlier versions kept the mode globally; drop it so it is not mistaken for this workspace's choice.
+    if (deps.globalState.get(STATE_MODE) !== undefined) void deps.globalState.update(STATE_MODE, undefined);
   }
 
   setListener(listener: ControllerListener | undefined): void {
@@ -100,12 +102,13 @@ export class AgentController implements vscode.Disposable {
     return this.session;
   }
 
+  /** Per workspace, so an auto-accept mode chosen for a trusted repository never carries over to another one. */
   get mode(): AgentMode {
-    return this.deps.globalState.get<AgentMode>(STATE_MODE, 'ask');
+    return this.deps.workspaceState.get<AgentMode>(STATE_MODE, 'ask');
   }
 
   async setMode(mode: AgentMode): Promise<void> {
-    await this.deps.globalState.update(STATE_MODE, mode);
+    await this.deps.workspaceState.update(STATE_MODE, mode);
     this.emitState();
   }
 

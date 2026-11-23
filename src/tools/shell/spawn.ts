@@ -33,11 +33,24 @@ export function spawnShell(shell: ShellSpec, command: string, cwd: string): Chil
 
 export function killTree(child: ChildProcess, graceMs = 2000): Promise<void> {
   return new Promise((resolve) => {
-    if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) {
+    if (child.pid === undefined) {
       resolve();
       return;
     }
     const pid = child.pid;
+    if (child.exitCode !== null || child.signalCode !== null) {
+      // The shell is gone, but on POSIX it led its own process group (detached), and children it left running in the
+      // background are still in that group. Windows has no equivalent once the parent has exited.
+      if (process.platform !== 'win32') {
+        try {
+          process.kill(-pid, 'SIGTERM');
+        } catch {
+          // no process left in the group
+        }
+      }
+      resolve();
+      return;
+    }
     const done = () => resolve();
     child.once('exit', done);
     if (process.platform === 'win32') {

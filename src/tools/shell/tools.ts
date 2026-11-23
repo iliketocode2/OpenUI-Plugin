@@ -8,6 +8,7 @@ import { killTree, spawnShell } from './spawn';
 
 const UPDATE_MS = 300;
 const DISPLAY_CHARS = 6000;
+const CLOSE_GRACE_MS = 500;
 
 /** The registry narrows this enum to the shells installed on this machine, or drops it when there is only one. */
 function shellParam(): { type: 'string'; enum: string[]; description: string } {
@@ -93,12 +94,30 @@ async function runCommand(args: RunArgs, shell: ShellSpec, cwd: string, ctx: Too
   }, timeoutMs);
   const onAbort = () => void killTree(child);
   ctx.signal.addEventListener('abort', onAbort, { once: true });
+  let lingering = false;
   const exitCode = await new Promise<number | null>((resolve) => {
+    let settled = false;
+    const settle = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(code);
+    };
     child.once('error', (e) => {
       output += `\n[failed to start ${shell.label}: ${e.message}]`;
-      resolve(-1);
+      settle(-1);
     });
-    child.once('close', (code) => resolve(code));
+    child.once('close', (code) => settle(code));
+    // 'close' waits until every process holding stdout/stderr has ended, so a child left running in the background
+    // (`cmd &`, `start /b`) would block it forever. Wait briefly for trailing output, then stop listening.
+    child.once('exit', (code) => {
+      setTimeout(() => {
+        if (settled) return;
+        lingering = true;
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        settle(code);
+      }, CLOSE_GRACE_MS);
+    });
   });
   clearTimeout(timer);
   if (pendingUpdate) clearTimeout(pendingUpdate);
@@ -110,7 +129,10 @@ async function runCommand(args: RunArgs, shell: ShellSpec, cwd: string, ctx: Too
   const status = timedOut ? `Timed out after ${timeoutMs / 1000}s and was killed.` : `Exit code ${exitCode}.`;
   const full = t.truncated ? `\n[Output truncated; the full output (${total} characters) is in ${logPath}. Use read_file or grep on it.]` : '';
   const body = t.text ? `\n${t.text}` : '\n(no output)';
-  const result = `${status}${body}${full}`;
+  const bg = lingering && !timedOut
+    ? '\n[The command exited, but a process it started in the background is still running; its later output is not captured. Use start_process for servers and watchers.]'
+    : '';
+  const result = `${status}${body}${full}${bg}`;
   return exitCode === 0 && !timedOut ? ok(result) : { content: result, isError: true };
 }
 

@@ -93,7 +93,12 @@ function Approval({ id, approval }: { id: string; approval: NonNullable<ToolItem
   const [feedback, setFeedback] = useState<string | undefined>(undefined);
   const [edited, setEdited] = useState(approval.editable?.value ?? '');
   const allowRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => allowRef.current?.focus(), []);
+  // Take focus only when nothing else has it. Moving it while the user types in the composer would let their next
+  // Space or Enter approve an action they have not read; the status region already announces the request.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) allowRef.current?.focus();
+  }, []);
   const decide = (decision: ApprovalDecision) => {
     post({ type: 'approve', id, decision: approval.editable && decision.decision !== 'deny' ? { ...decision, edited: edited.trim() } : decision });
     returnFocusToComposer();
@@ -121,7 +126,7 @@ function Approval({ id, approval }: { id: string; approval: NonNullable<ToolItem
             {approval.kind === 'edit' || approval.kind === 'write' ? 'Apply' : 'Allow'}
           </button>
           {approval.allowAlways && (
-            <button class="btn btn-secondary" onClick={() => decide({ decision: 'allowAlways' })} title="Adds this prefix to owuiAgent.commands.allowlist for this workspace">
+            <button class="btn btn-secondary" onClick={() => decide({ decision: 'allowAlways' })} title="Adds this prefix to owuiAgent.commands.allowlist in your user settings, for every workspace">
               Always allow <code>{approval.allowAlways}</code>
             </button>
           )}

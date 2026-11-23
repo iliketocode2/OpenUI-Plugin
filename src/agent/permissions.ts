@@ -11,6 +11,13 @@ export interface PolicyInput {
   autoApproveSearches?: boolean;
 }
 
+function controlWarning(display: string): string {
+  if (/(^|[\\/])\.owui([\\/]|$)/i.test(display)) {
+    return 'This is OWUI Agent project memory or skills. Later sessions load it as instructions, so a change here can steer the agent long after this conversation.';
+  }
+  return 'This is Git or VS Code configuration. Changes here can make Git or the editor run programs, or change what the agent may do without asking.';
+}
+
 const WEB_WARNING = 'This leaves your machine: your Open WebUI server sends it to its search engine or the website, and from there to the public internet. Do not include secrets or internal names.';
 
 export function decide({ mode, access, allowlist, autoApproveSearches }: PolicyInput): PolicyDecision {
@@ -57,7 +64,7 @@ export function decide({ mode, access, allowlist, autoApproveSearches }: PolicyI
       if (control) {
         return {
           kind: 'ask',
-          request: { kind: 'edit', question: `Apply this change to ${control.display}?`, warnings: ['This is Git or VS Code configuration. Changes here can make Git or the editor run programs, or change what the agent may do without asking.'] },
+          request: { kind: 'edit', question: `Apply this change to ${control.display}?`, warnings: [controlWarning(control.display)] },
         };
       }
       if (scratchOnly || mode === 'auto' || mode === 'review') return { kind: 'allow' };

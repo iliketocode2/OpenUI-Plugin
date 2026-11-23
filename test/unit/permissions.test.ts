@@ -28,6 +28,14 @@ describe('permission policy', () => {
     expect(decide({ mode: 'ask', allowlist: [], access: { kind: 'read', paths: [{ ...p('workspace', '.git/config'), control: true }] } }).kind).toBe('allow');
   });
 
+  it('always asks before changing project memory or skills, even in auto mode', () => {
+    for (const mode of ['auto', 'review'] as const) {
+      const d = decide({ mode, allowlist: [], access: { kind: 'write', paths: [{ ...p('workspace', '.owui/skills/x/SKILL.md'), control: true }] } });
+      expect(d.kind).toBe('ask');
+      expect(d.kind === 'ask' && d.request.warnings.join(' ')).toMatch(/Later sessions load it/);
+    }
+  });
+
   it('allows scratchpad writes in every mode', () => {
     expect(decide({ mode: 'ask', allowlist: [], access: { kind: 'write', paths: [p('scratchpad')] } }).kind).toBe('allow');
   });

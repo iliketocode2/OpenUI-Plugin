@@ -9,7 +9,8 @@ export interface ResolvedPath {
   root?: string;
   display: string;
   sensitive: boolean;
-  /** Git or VS Code configuration: writing it can make Git or the editor run programs or change the agent's permissions. */
+  /** Git, VS Code or OWUI Agent configuration: writing it can make Git or the editor run programs, change the agent's
+   * permissions, or plant memory and skills that later sessions load as instructions. */
   control?: boolean;
 }
 
@@ -22,7 +23,7 @@ const SENSITIVE = [
   /(^|[\\/])(credentials|secrets?)(\.[a-z]+)?$/i,
 ];
 
-const CONTROL = /(^|[\\/])\.(git|vscode)([\\/]|$)/i;
+const CONTROL = /(^|[\\/])\.(git|vscode|owui)([\\/]|$)/i;
 
 /** Globs (ripgrep syntax) that keep directory-wide searches away from the files SENSITIVE matches. */
 export const SENSITIVE_GLOBS = ['.env', '.env.*', '*.{pem,key,p12,pfx,keystore,jks,kdbx}', 'id_{rsa,dsa,ecdsa,ed25519}', 'id_{rsa,dsa,ecdsa,ed25519}.pub', '.{npmrc,pypirc,netrc,git-credentials}', '.{ssh,aws,gnupg,docker,kube}', '{credentials,secret,secrets}', '{credentials,secret,secrets}.*'];

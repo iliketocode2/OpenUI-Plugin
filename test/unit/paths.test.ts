@@ -66,9 +66,9 @@ describe('PathGuard', () => {
     expect(guard.resolve(`\\\\?\\${path.join(ws, 'src', 'a.ts')}`).zone).toBe('workspace');
   });
 
-  it('marks Git and VS Code configuration as control paths', () => {
-    for (const f of ['.git/config', '.git/hooks/pre-commit', '.vscode/settings.json', 'sub/.git/config']) expect(guard.resolve(f).control, f).toBe(true);
-    for (const f of ['.gitignore', '.github/workflows/ci.yml', 'src/a.ts', 'docs/.vscodeignore']) expect(guard.resolve(f).control, f).toBe(false);
+  it('marks Git, VS Code and OWUI Agent configuration as control paths', () => {
+    for (const f of ['.git/config', '.git/hooks/pre-commit', '.vscode/settings.json', 'sub/.git/config', '.owui/memory/MEMORY.md', '.owui/skills/x/SKILL.md']) expect(guard.resolve(f).control, f).toBe(true);
+    for (const f of ['.gitignore', '.github/workflows/ci.yml', 'src/a.ts', 'docs/.vscodeignore', '.owuirc']) expect(guard.resolve(f).control, f).toBe(false);
   });
 
   it('treats a link to a sensitive file as sensitive', async () => {

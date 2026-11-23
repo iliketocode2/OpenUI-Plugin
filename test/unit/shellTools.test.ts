@@ -16,6 +16,15 @@ const ECHO: Record<string, string> = {
   cmd: 'echo hello from cmd && cd',
 };
 
+/** Leaves a child running that inherits the shell's stdout, so the pipe stays open after the shell exits. */
+const BACKGROUND: Record<string, string> = {
+  gitbash: 'sleep 20 & echo parent done',
+  bash: 'sleep 20 & echo parent done',
+  zsh: 'sleep 20 & echo parent done',
+  sh: 'sleep 20 & echo parent done',
+  cmd: 'start /b ping -n 20 127.0.0.1 >nul & echo parent done',
+};
+
 let env: TestEnv;
 
 beforeEach(async () => {
@@ -40,6 +49,15 @@ describe.each(availableShells())('run_command with %s', (shell) => {
     expect(r.isError).toBe(true);
     expect(r.content).toMatch(/^Exit code 3\./);
   });
+
+  it.runIf(BACKGROUND[shell])('returns when the shell exits although a background child still holds the output open', async () => {
+    const started = Date.now();
+    const r = await env.run(runCommandTool, { command: BACKGROUND[shell]!, description: 'Leave a child behind', shell, timeout_seconds: 60 });
+    expect(r.content, r.content).toMatch(/^Exit code 0\./);
+    expect(r.content).toContain('parent done');
+    expect(r.content).toMatch(/still running/);
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 30_000);
 });
 
 describe('run_command behaviour', () => {
