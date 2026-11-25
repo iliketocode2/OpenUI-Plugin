@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { EXTENSION_ID } from '../extensionId';
 import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -33,7 +34,7 @@ describe('OWUI Agent tools and agent loop (integration)', () => {
   before(async () => {
     mock = new MockOwui({ apiKey: KEY, models: { data: [{ id: 'mock-model', name: 'Mock Model', info: { params: { num_ctx: 32768 } } }] } });
     await mock.start();
-    const ext = vscode.extensions.getExtension<TestApi>('local.owui-agent')!;
+    const ext = vscode.extensions.getExtension<TestApi>(EXTENSION_ID)!;
     api = (await ext.activate())!;
     const c = vscode.workspace.getConfiguration('owuiAgent');
     await c.update('baseUrl', mock.baseUrl, vscode.ConfigurationTarget.Global);

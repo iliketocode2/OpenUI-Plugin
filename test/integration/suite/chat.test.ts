@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { EXTENSION_ID } from '../extensionId';
 import * as vscode from 'vscode';
 import type { TestApi } from '../../../src/extension';
 import type { TranscriptItem } from '../../../src/shared/protocol';
@@ -33,7 +34,7 @@ describe('OWUI Agent chat (integration)', () => {
   before(async () => {
     mock = new MockOwui({ apiKey: KEY, models: { data: [{ id: 'chat-model', name: 'Mock Model', info: { params: { num_ctx: 16384 }, meta: { capabilities: { vision: false } } } }] } });
     await mock.start();
-    const ext = vscode.extensions.getExtension<TestApi>('local.owui-agent');
+    const ext = vscode.extensions.getExtension<TestApi>(EXTENSION_ID);
     assert.ok(ext, 'extension not found');
     const exported = await ext.activate();
     assert.ok(exported, 'test API is only exported in test mode');

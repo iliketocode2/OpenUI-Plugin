@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+Project:
+
+- OWUI Agent is open source under the MIT license. Releases, with the `.vsix` attached, are published on GitHub from version tags after CI passes on Windows, macOS and Linux, on both the oldest supported and the current VS Code.
+- The extension ID is now `iliketocode2.owui-agent` (it was `local.owui-agent`). VS Code treats it as a new extension: uninstall the old one. Settings carry over, but set the API key again; conversation history from the old build is not shown.
+- The licenses of the bundled packages ship in `THIRD_PARTY_NOTICES.md`.
+
 Tool calling:
 
 - The text-based tool protocol and the automatic fallback to it are gone, along with the per-model `toolMode` setting. The agent uses native tool calling only; a model whose server rejects tools now gets a clear error instead of a silent switch. The fallback could run a tool call the model had only shown as an example inside a code fence, and an unrelated error that mentioned "tool calling" switched the rest of the run to text mode.
@@ -16,6 +22,7 @@ Fixes:
 - Esc stops the agent from anywhere in the chat view, but no longer when it closes the history panel or is pressed in a text field.
 - While the history panel is open, Esc closes it wherever focus is. Before, it closed the panel only when focus was inside it: right after opening, or after a click on blank space, Esc could stop the agent instead.
 - The browser tool opens a new page after the app closes its window, and a new browser after the browser exits. Before, every later action failed with "Target page, context or browser has been closed".
+- After a page fails to load (for example "Nothing is listening" because the dev server is not up yet), the next `navigate` returns only once the new page is really showing. Chrome commits its error page after reporting the failure; that late commit left the reset to `about:blank` pending, so the next navigation could report success while the old blank page was still in place, and closing the page in that moment hung the browser.
 - The browser tool keeps Playwright's own list of disabled Chrome features. Chrome uses only the last `--disable-features` it is given, so the extension's privacy list replaced Playwright's, and with `AvoidUnnecessaryBeforeUnloadCheckSync` back on, closing a page could hang the browser ([playwright#14047](https://github.com/microsoft/playwright/issues/14047)). A test now fails if an upgraded Playwright disables a feature the extension's list lacks.
 - The browser tool no longer waits forever for a browser that is slow to exit or stops responding. On a busy machine Chrome can take a minute or more to exit, and Playwright waits for that with no time limit. Opening a tab now gives up after 15 s and closing the browser after 10 s; the tool then starts a new browser with a profile folder of its own, and the old one exits in its own time.
 - Rewind and review treat `src/A.ts` and `SRC/a.ts`, or a path through a folder link, as one file. Before, a rewind could restore an intermediate version.

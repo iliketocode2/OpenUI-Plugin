@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { EXTENSION_ID } from '../extensionId';
 import * as vscode from 'vscode';
 import type { TestApi } from '../../../src/extension';
 import type { HistoryEntry } from '../../../src/shared/protocol';
@@ -19,7 +20,7 @@ describe('OWUI Agent history (integration)', () => {
   before(async () => {
     mock = new MockOwui({ apiKey: KEY, models: { data: [{ id: 'history-model', name: 'History Model', info: { params: { num_ctx: 32768 } } }] } });
     await mock.start();
-    api = (await vscode.extensions.getExtension<TestApi>('local.owui-agent')!.activate())!;
+    api = (await vscode.extensions.getExtension<TestApi>(EXTENSION_ID)!.activate())!;
     const c = vscode.workspace.getConfiguration('owuiAgent');
     await c.update('baseUrl', mock.baseUrl, vscode.ConfigurationTarget.Global);
     await c.update('models', {}, vscode.ConfigurationTarget.Global);

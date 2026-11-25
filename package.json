@@ -3,9 +3,17 @@
   "displayName": "OWUI Agent",
   "description": "Autonomous coding agent that talks only to your self-hosted Open WebUI.",
   "version": "0.1.0",
-  "publisher": "local",
+  "publisher": "iliketocode2",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iliketocode2/OpenUI-Plugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iliketocode2/OpenUI-Plugin/issues"
+  },
+  "homepage": "https://github.com/iliketocode2/OpenUI-Plugin#readme",
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -291,6 +299,7 @@
     "check": "npm run typecheck && npm run lint && npm test && npm run test:browser && npm run test:integration",
     "smoke:live": "node scripts/smoke-live.mjs",
     "package": "node scripts/package-vsix.mjs",
+    "notices": "node scripts/third-party-notices.mjs",
     "smoke:agent": "node scripts/live-agent.mjs",
     "smoke:web": "esbuild test/live/web.live.ts --bundle --external:playwright-core --platform=node --format=cjs --outfile=out/live/web.live.js --log-level=warning && node out/live/web.live.js"
   },

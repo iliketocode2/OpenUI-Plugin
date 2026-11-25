@@ -2,7 +2,7 @@
 
 An autonomous coding agent for VS Code whose only model backend is **your own Open WebUI server**. Give it a multi-step task; it plans, asks clarifying questions, edits files, runs commands and tests, fixes its own mistakes, and finishes with an honest report of what it built, what it tested and what it did not.
 
-Full installation and server setup: see `docs/SETUP.md` in the source repository.
+Full installation and server setup: [docs/SETUP.md](docs/SETUP.md). OWUI Agent is open source under the [MIT license](LICENSE).
 
 ## Data sovereignty
 
@@ -44,7 +44,7 @@ What the extension cannot guarantee:
 
 ## Quick start
 
-1. Install the `.vsix` (Extensions view → `…` → **Install from VSIX…**).
+1. Download the latest `.vsix` from [Releases](https://github.com/iliketocode2/OpenUI-Plugin/releases) and install it (Extensions view → `…` → **Install from VSIX…**).
 2. Set **OWUI Agent › Base URL** to your Open WebUI address.
 3. Run **OWUI Agent: Set API Key**.
 4. Open the **OWUI Agent** view, pick a model, and describe what you want built.
@@ -86,11 +86,14 @@ npm run build           # dist/extension.js and dist/webview
 npm test                # unit and egress tests (fast; no browser)
 npm run test:browser    # tests that drive your installed Chrome or Edge
 npm run check           # type-check, lint, all of the above, VS Code integration tests
-npm run package         # owui-agent-<version>.vsix (never published)
+npm run package         # owui-agent-<version>.vsix
+npm run notices         # regenerate THIRD_PARTY_NOTICES.md after changing dependencies
 ```
 
+Releases are published from version tags by CI; see [docs/RELEASING.md](docs/RELEASING.md).
+
 - **Unit and egress tests** (Vitest): tool layer, stream parser, compaction, permissions, history, the chat view's state and Markdown sanitizing, and the network-egress guards. The browser tool, its egress guard and the chat view page itself (hostile model output, approval focus, Esc) are tested separately in a real headless browser (`npm run test:browser`).
-- **Integration tests:** run inside VS Code 1.96 against a mock Open WebUI that replays scripted tool-calling conversations.
+- **Integration tests:** run inside VS Code against a mock Open WebUI that replays scripted tool-calling conversations. CI runs them on the oldest supported VS Code (1.96) and the current release; locally, set `VSCODE_TEST_VERSION=stable` to test the current one.
 - **Live checks** against a real server (reads `OWUI_BASE_URL`, `OWUI_MODEL` and `OWUI_API_KEY` from the environment):
   - `npm run smoke:live` covers protocol details.
   - `npm run smoke:agent` runs a short agent task; set `OWUI_TASK=web` for a search-and-fetch task.
@@ -99,3 +102,7 @@ npm run package         # owui-agent-<version>.vsix (never published)
   - Bundled into the extension: `preact`, `markdown-it` (and its small dependencies), `highlight.js`, `diff`.
   - Shipped unbundled: `playwright-core`, used only for the browser tool. It never downloads browsers.
   - A test fails if the dependency list changes without review, and another fails if any source file outside `src/net/` imports a network module.
+
+## License
+
+[MIT](LICENSE). The licenses of the bundled and shipped packages are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

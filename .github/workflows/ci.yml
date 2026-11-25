@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release workflow runs this whole file first, and publishes only the .vsix it built.
+  workflow_call:
 
 permissions:
   contents: read
@@ -89,3 +91,29 @@ jobs:
           name: owui-agent-vsix
           path: '*.vsix'
           if-no-files-found: error
+
+  # The job above pins the oldest supported VS Code (engines.vscode). Most people run the current release, so the
+  # integration tests run against that too. Not cached: "stable" is a new build every month.
+  vscode-stable:
+    name: VS Code stable (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      VSCODE_TEST_VERSION: stable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: VS Code integration tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:integration
+      - name: VS Code integration tests
+        if: runner.os != 'Linux'
+        run: npm run test:integration
