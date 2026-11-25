@@ -46,24 +46,35 @@ jobs:
           path: .vscode-test
           key: vscode-test-${{ runner.os }}-${{ env.VSCODE_TEST_VERSION }}
 
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
+      - id: install
+        run: npm ci
+
+      # Every check below runs even when an earlier one failed, so one run shows every failure on every platform.
+      # They are skipped only when the install failed or the run was cancelled.
+      - name: Type-check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run typecheck
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint
       - name: Unit and egress tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm test
       - name: Browser tests (installed Chrome or Edge)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test:browser
       - name: VS Code integration tests (Linux)
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && runner.os == 'Linux' }}
         run: xvfb-run -a npm run test:integration
       - name: VS Code integration tests
-        if: runner.os != 'Linux'
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && runner.os != 'Linux' }}
         run: npm run test:integration
       - name: Package
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run package
+      # The .vsix is the same on every platform; keep one, and only from a run where every check passed.
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'Linux'
+        if: ${{ success() && runner.os == 'Linux' }}
         with:
           name: owui-agent-vsix
           path: '*.vsix'
