@@ -35,11 +35,19 @@ const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', 'ksh', 'cmd', 'powe
 const NEVER_SUGGEST = new Set([
   ...SHELLS, 'python', 'python3', 'py', 'node', 'deno', 'bun', 'ruby', 'perl', 'php', 'lua', 'npx', 'pnpx', 'bunx', 'env', 'xargs', 'find',
   'sed', 'awk', 'gawk', 'tar', 'rsync', 'ssh', 'scp', 'curl', 'wget', 'nc', 'ncat', 'socat', 'sudo', 'doas', 'su', 'runas', 'git',
-  'iex', 'invoke-expression', 'invoke-command', 'icm',
+  'iex', 'invoke-expression', 'invoke-command', 'icm', 'uvx', 'pipx',
+  // cmake runs scripts (-P) and deletes files (-E rm).
+  'cmake',
+  // Change or delete files without the edit approval or a checkpoint, so a rewind could not undo them.
+  'rm', 'rmdir', 'rd', 'del', 'erase', 'mv', 'move', 'cp', 'copy', 'xcopy', 'robocopy', 'tee', 'dd', 'truncate', 'shred', 'ln',
+  'chmod', 'chown', 'touch', 'remove-item', 'ri', 'move-item', 'mi', 'copy-item', 'cpi', 'set-content', 'add-content', 'ac',
+  'out-file', 'new-item', 'ni', 'rename-item', 'rni', 'clear-content', 'clc',
 ]);
 const WITH_SUBCOMMAND = new Set(['npm', 'pnpm', 'yarn', 'npx', 'git', 'cargo', 'go', 'dotnet', 'pip', 'make', 'mvn', 'gradle', 'poetry', 'uv']);
-// Subcommands that download and run third-party code.
-const INSTALLS = new Set(['install', 'i', 'add', 'ci', 'exec', 'x', 'dlx', 'get']);
+// Package managers whose `run` takes a script named in the project; it is suggested with that name only.
+const SCRIPT_RUNNERS = new Set(['npm', 'pnpm', 'yarn']);
+// Subcommands that download and run third-party code, or run whatever program or file follows (`go run x.go`).
+const INSTALLS = new Set(['install', 'i', 'add', 'ci', 'exec', 'x', 'dlx', 'get', 'run']);
 // Environment assignments that cannot change which program runs or what it loads.
 const SAFE_ENV = new Set(['CI', 'NODE_ENV', 'FORCE_COLOR', 'NO_COLOR', 'DEBUG', 'TZ', 'LANG', 'LC_ALL']);
 // Flags that make an allow-listed tool load or run other code, or write somewhere else.
@@ -217,7 +225,14 @@ function withoutHarmlessRedirects(command: string): string {
 function leavesWorkspace(arg: string): boolean {
   if (/^\/[A-Za-z?]{1,2}(:\S*)?$/.test(arg)) return false; // a cmd.exe switch such as /b or /T:x
   const value = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : arg;
-  return /^([/\\~]|[A-Za-z]:)/.test(value) || /(^|[/\\])\.\.([/\\]|$)/.test(value);
+  if (/^([/\\~]|[A-Za-z]:)/.test(value) || /(^|[/\\])\.\.([/\\]|$)/.test(value)) return true;
+  // A value glued to its flag: -o/etc/x, -I../include, -oC:\x, --out../x.
+  const glued = /^-{1,2}[A-Za-z][\w-]*?(?=[/\\~.]|[A-Za-z]:[/\\])/.exec(arg);
+  if (glued) {
+    const rest = arg.slice(glued[0].length);
+    return /^([/\\~]|[A-Za-z]:[/\\])/.test(rest) || /^\.\.([/\\]|$)/.test(rest);
+  }
+  return false;
 }
 
 /** Whether a command is simple enough that matching it against allowlist prefixes is meaningful. */
@@ -261,7 +276,7 @@ export function suggestAllowEntry(command: string): string | undefined {
   const plainWord = (w: string | undefined) => !!w && /^[A-Za-z][\w:.-]*$/.test(w);
   if (WITH_SUBCOMMAND.has(program)) {
     if (!plainWord(second)) return undefined;
-    if (program === 'npm' && second === 'run') return plainWord(third) ? `npm run ${third}` : undefined;
+    if (SCRIPT_RUNNERS.has(program) && second === 'run') return plainWord(third) ? `${first} run ${third}` : undefined;
     if (INSTALLS.has(second!.toLowerCase())) return undefined;
     if (program === 'npx' && NEVER_SUGGEST.has(second!.toLowerCase())) return undefined;
     return `${first} ${second}`;

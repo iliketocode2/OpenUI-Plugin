@@ -14,7 +14,9 @@ Fixes:
 - Text added with **Add Selection to Chat**, and the history panel opened from its command, are no longer lost when the chat view was hidden and has to reload first.
 - Changing a setting reconnects to Open WebUI only for the base URL and web access. Before, every change, including ticking **Local**, choosing a context size or **Always allow**, fetched the model list again, and so did every reopening of the chat view.
 - Esc stops the agent from anywhere in the chat view, but no longer when it closes the history panel or is pressed in a text field.
+- While the history panel is open, Esc closes it wherever focus is. Before, it closed the panel only when focus was inside it: right after opening, or after a click on blank space, Esc could stop the agent instead.
 - The browser tool opens a new page after the app closes its window, and a new browser after the browser exits. Before, every later action failed with "Target page, context or browser has been closed".
+- The browser tool no longer waits forever for a browser that is slow to exit or stops responding. On a busy machine Chrome can take a minute or more to exit, and Playwright waits for that with no time limit. Opening a tab now gives up after 15 s and closing the browser after 10 s; the tool then starts a new browser with a profile folder of its own, and the old one exits in its own time.
 - Rewind and review treat `src/A.ts` and `SRC/a.ts`, or a path through a folder link, as one file. Before, a rewind could restore an intermediate version.
 - File names in the review list, approvals and the rewind confirmation stay relative to the workspace when it was opened through a link or a short name (macOS `/var` → `/private/var`, Windows `C:\Users\RUNNER~1`). Before, they showed as `../../../private/var/…/file.txt`.
 - The example palette validator prints its result when run from a folder reached through a link. Before, it printed nothing on macOS.
@@ -56,6 +58,9 @@ Security:
 - The permission mode is stored per workspace, so an auto-accept mode chosen in a trusted repository no longer carries over to others. Every workspace starts in **Ask before edits** once after updating.
 - Changes to `.owui/` (project memory and skills, which later sessions load as instructions) always ask, as `.git/` and `.vscode/` already did. `update_memory` therefore asks even in the auto-accept modes.
 - An approval card takes keyboard focus only when nothing else has it, so typing in the composer while the agent works can no longer approve a command by accident.
+- **Always allow** is no longer offered for commands that run whatever follows them (`uv run`, `go run`, `cargo run`, `dotnet run`, `poetry run`, `uvx`, `pipx`, `cmake`) or that change or delete files (`rm`, `mv`, `cp`, `tee`, `Remove-Item`, `Set-Content` and similar), which would bypass the edit approval and checkpoints. `pnpm run` and `yarn run` are suggested with the script name, as `npm run` already was.
+- An allow-listed command asks when a path outside the workspace is glued to a flag (`-o/etc/x`, `-I../include`). Before, only `--flag=/path` and separate arguments were caught.
+- `write_file` refuses to overwrite a file that changed, or was created, while its approval was open, as `edit_file` already did.
 - `run_command` returns when the shell exits even if a process it started in the background (`cmd &`, `start /b`) still holds its output open; previously it waited for that process, forever for a server, and Stop could not end the wait. On macOS and Linux, stopping or timing out a command also stops the processes it left behind.
 
 Reliability:

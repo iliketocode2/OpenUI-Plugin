@@ -82,6 +82,25 @@ describe('write_file', () => {
     const prepared = await writeFileTool.prepare({ path: outside, content: 'x' }, env.ctx);
     expect('access' in prepared && prepared.access.kind === 'write' && prepared.access.paths[0]!.zone).toBe('outside');
   });
+
+  // The user can edit or create the file while the approval is open; overwriting it would lose that work silently.
+  it('refuses to overwrite a file that changed, or appeared, after the write was prepared', async () => {
+    type Prepared = { execute(): Promise<{ content: string; isError?: boolean }> };
+    const target = path.join(env.workspace, 'w2.txt');
+    await writeFile(target, 'v1\n');
+    const changed = (await writeFileTool.prepare({ path: 'w2.txt', content: 'agent\n' }, env.ctx)) as Prepared;
+    await writeFile(target, 'v1 edited by the user\n');
+    const r1 = await changed.execute();
+    expect(r1.isError).toBe(true);
+    expect(r1.content).toMatch(/changed on disk/);
+    expect(await readFile(target, 'utf8')).toBe('v1 edited by the user\n');
+
+    const created = (await writeFileTool.prepare({ path: 'w3.txt', content: 'agent\n' }, env.ctx)) as Prepared;
+    await writeFile(path.join(env.workspace, 'w3.txt'), 'made by the user\n');
+    const r2 = await created.execute();
+    expect(r2.isError).toBe(true);
+    expect(await readFile(path.join(env.workspace, 'w3.txt'), 'utf8')).toBe('made by the user\n');
+  });
 });
 
 describe('edit_file', () => {

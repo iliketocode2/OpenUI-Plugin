@@ -105,9 +105,39 @@ describe('suggestAllowEntry', () => {
       'sed -n 1p a.txt',
       'curl http://localhost:3000',
       './git status',
+      // `run` executes whatever program or file follows, like python or node.
+      'uv run x.py',
+      'go run .',
+      'cargo run',
+      'dotnet run',
+      'poetry run pytest',
+      'pnpm run',
+      'uvx ruff',
+      'pipx run black',
+      // cmake can run scripts (-P) and delete files (-E rm).
+      'cmake --build .',
     ]) {
       expect(suggestAllowEntry(c), c).toBeUndefined();
     }
+  });
+
+  it('never suggests commands that change or delete files, which would bypass edit approval and checkpoints', () => {
+    for (const c of [
+      'rm foo.txt', 'rmdir build', 'del foo.txt', 'erase foo.txt', 'mv a b', 'move a b', 'cp a b', 'copy a b', 'xcopy a b', 'robocopy a b',
+      'tee out.txt', 'dd if=a of=b', 'truncate -s 0 a', 'shred a', 'ln -s a b', 'chmod +x a', 'chown me a', 'touch a',
+      'Remove-Item foo', 'ri foo', 'Move-Item a b', 'Copy-Item a b', 'Set-Content a x', 'Add-Content a x', 'Out-File a', 'New-Item a', 'Rename-Item a b', 'Clear-Content a',
+    ]) {
+      expect(suggestAllowEntry(c), c).toBeUndefined();
+    }
+  });
+
+  it('suggests a named script for every package manager, never the whole run subcommand', () => {
+    expect(suggestAllowEntry('pnpm run build')).toBe('pnpm run build');
+    expect(suggestAllowEntry('yarn run lint --fix')).toBe('yarn run lint');
+    expect(suggestAllowEntry('npm run build')).toBe('npm run build');
+    expect(suggestAllowEntry('make test')).toBe('make test');
+    expect(suggestAllowEntry('cargo test')).toBe('cargo test');
+    expect(suggestAllowEntry('go test ./...')).toBe('go test');
   });
 });
 
@@ -151,6 +181,14 @@ describe('allowlist bypass regressions', () => {
     blocked('ls ~');
     blocked('ls ..\\other');
     blocked('ls C:\\Users');
+    // A path glued to a short flag: -o/etc/x, -I../include, -oC:\x.
+    blocked('npm test -- -o/etc/passwd');
+    blocked('npm test -- -I../include');
+    blocked('npm test -- -o~/x');
+    blocked('npm test -- -oC:\\x');
+    blocked('npm test -- --out../x');
+    expect(isAllowlisted('npm test -- -t smoke', list)).toBe(true);
+    expect(isAllowlisted('npm test -- -w', list)).toBe(true);
     expect(isAllowlisted('ls src', list)).toBe(true);
     expect(isAllowlisted('ls /b', ['ls'])).toBe(true);
   });

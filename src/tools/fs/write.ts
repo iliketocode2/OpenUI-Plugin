@@ -53,6 +53,15 @@ export const writeFileTool: Tool<WriteArgs> = {
       card: { title, diff: diff.unified },
       preview: { absolute: target.absolute, display: target.display, before: before ?? '', after: content },
       async execute() {
+        // The file can change while the approval is open; overwriting it would silently discard that work.
+        const current = await readExisting(target.absolute);
+        if (current !== before) {
+          return fail(
+            before === undefined
+              ? `${target.display} was created on disk since the write was prepared. Read it and retry.`
+              : `${target.display} changed on disk since the write was prepared. Read it again and retry.`,
+          );
+        }
         await ctx.beforeWrite(target.absolute);
         await mkdir(path.dirname(target.absolute), { recursive: true });
         await writeFile(target.absolute, content, 'utf8');
