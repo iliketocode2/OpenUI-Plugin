@@ -246,9 +246,8 @@ export class AgentController implements vscode.Disposable {
         return undefined;
       }
       if (preview.length) {
-        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
         const verb = { restore: 'Restore', delete: 'Delete', skip: 'Cannot restore (not backed up)' } as const;
-        const lines = preview.slice(0, 15).map((c) => `${verb[c.action]} ${path.relative(root, c.absolute) || c.absolute}${c.changedSince ? ' (changed after the agent edited it)' : ''}`);
+        const lines = preview.slice(0, 15).map((c) => `${verb[c.action]} ${c.display}${c.changedSince ? ' (changed after the agent edited it)' : ''}`);
         const more = preview.length > 15 ? `\n…and ${preview.length - 15} more` : '';
         const changed = preview.filter((c) => c.changedSince && c.action !== 'skip').length;
         const notes = ["This undoes the agent's file edits, not changes made by shell commands."];

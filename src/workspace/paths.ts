@@ -67,13 +67,22 @@ export class PathGuard {
     const flags = { sensitive: isSensitivePath(absolute) || isSensitivePath(real), control: CONTROL.test(absolute) || CONTROL.test(real) };
     for (const root of this.roots()) {
       const r = realOrNearest(root);
-      if (this.within(real, r)) return { absolute, zone: 'workspace', root, display: displayPath(absolute, root), ...flags };
+      if (this.within(real, r)) return { absolute, zone: 'workspace', root, display: this.relativeName(absolute, real, root, r), ...flags };
     }
     const sp = realOrNearest(this.scratchpad);
     if (this.within(real, sp)) {
-      return { absolute, zone: 'scratchpad', root: this.scratchpad, display: `<scratchpad>/${toSlash(path.relative(this.scratchpad, absolute))}`, ...flags };
+      return { absolute, zone: 'scratchpad', root: this.scratchpad, display: `<scratchpad>/${this.relativeName(absolute, real, this.scratchpad, sp)}`, ...flags };
     }
     return { absolute, zone: 'outside', display: absolute, ...flags };
+  }
+
+  /** The name of a file under `root` relative to it. `absolute` may be spelled through the root as VS Code reports
+   * it (/var/…, C:\Users\RUNNER~1\…) or through its real path (/private/var/…); the link's own name is kept when it
+   * is inside the root. Only a file reached through a link from elsewhere is named by where it really is. */
+  private relativeName(absolute: string, real: string, root: string, realRoot: string): string {
+    if (this.within(absolute, root)) return displayPath(absolute, root);
+    if (this.within(absolute, realRoot)) return displayPath(absolute, realRoot);
+    return displayPath(real, realRoot);
   }
 
   private within(child: string, parent: string): boolean {

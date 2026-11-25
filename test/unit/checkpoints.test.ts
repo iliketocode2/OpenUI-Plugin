@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CheckpointManager } from '../../src/checkpoints/checkpoints';
+import { realPath } from '../../src/workspace/paths';
 
 let base: string;
 let ws: string;
@@ -11,8 +12,11 @@ let m: CheckpointManager;
 
 beforeEach(async () => {
   base = await mkdtemp(path.join(tmpdir(), 'owui checkpoints '));
+  // The project is opened through a link, as on CI: macOS reaches the temp folder through /var → /private/var and
+  // Windows through an 8.3 name (RUNNER~1). Checkpoints report each file by its real path. Junctions need no rights.
+  await mkdir(path.join(base, 'real project'), { recursive: true });
   ws = path.join(base, 'my project');
-  await mkdir(ws, { recursive: true });
+  await symlink(path.join(base, 'real project'), ws, process.platform === 'win32' ? 'junction' : 'dir');
   m = new CheckpointManager(path.join(base, 'backups'));
 });
 
@@ -21,6 +25,8 @@ afterEach(async () => {
 });
 
 const file = (rel: string) => path.join(ws, rel);
+/** How checkpoints report a file: by its real path. */
+const real = (rel: string) => realPath(file(rel));
 
 /** Does what the write tools do: back up, write, record the result. */
 async function agentWrite(rel: string, content: string): Promise<void> {
@@ -69,7 +75,7 @@ describe('CheckpointManager', () => {
       ['created.txt', 'delete'],
     ]);
     const r = await m.rewind(cp1.id);
-    expect(r).toMatchObject({ restored: [file('a.txt')], deleted: [file('created.txt')], skipped: [], failed: [] });
+    expect(r).toMatchObject({ restored: [real('a.txt')], deleted: [real('created.txt')], skipped: [], failed: [] });
     expect(await readFile(file('a.txt'), 'utf8')).toBe('v1');
     expect(existsSync(file('created.txt'))).toBe(false);
     expect(existsSync(file('untracked-by-agent.txt'))).toBe(true);
@@ -82,9 +88,9 @@ describe('CheckpointManager', () => {
     const cp = m.begin('big');
     await agentWrite('big.bin', 'replaced');
     const plan = await m.plan(cp.id);
-    expect(plan).toEqual([{ absolute: file('big.bin'), action: 'skip' }]);
+    expect(plan).toEqual([{ absolute: real('big.bin'), action: 'skip' }]);
     const r = await m.rewind(cp.id);
-    expect(r.skipped).toEqual([file('big.bin')]);
+    expect(r.skipped).toEqual([real('big.bin')]);
     expect(r.deleted).toEqual([]);
     expect(await readFile(file('big.bin'), 'utf8')).toBe('replaced');
     expect(await m.revertFile(cp.id, file('big.bin'))).toBe(false);
@@ -111,7 +117,7 @@ describe('CheckpointManager', () => {
     await writeFile(path.join(file('gone.txt'), 'inside'), 'blocks rm');
     const r = await m.rewind(cp.id);
     expect(r.deleted).toEqual([]);
-    expect(r.failed).toEqual([file('gone.txt')]);
+    expect(r.failed).toEqual([real('gone.txt')]);
   });
 
   it('reverts a single file to its state before the checkpoint', async () => {
@@ -135,6 +141,6 @@ describe('CheckpointManager', () => {
     expect((await restored.plan(cp.id))[0]).toMatchObject({ action: 'restore', changedSince: true });
     const legacy = new CheckpointManager(path.join(base, 'backups'));
     legacy.restore(saved.map(({ written: _omit, ...rest }) => ({ ...rest, sha: 'abc' }) as never));
-    expect((await legacy.plan(cp.id))[0]).toEqual({ absolute: file('s.txt'), action: 'restore' });
+    expect((await legacy.plan(cp.id))[0]).toEqual({ absolute: real('s.txt'), action: 'restore' });
   });
 });

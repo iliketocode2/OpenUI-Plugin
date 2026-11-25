@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -57,6 +57,11 @@ describe('palette validator path detection', () => {
         const out = execFileSync(process.execPath, [script, '#0072B2', '#D55E00'], { encoding: 'utf8' });
         expect(out, name).toMatch(/PASS/);
       }
+      // Run through a link as well, as on macOS where /var is a link to /private/var. Junctions need no rights on Windows.
+      const linked = path.join(base, 'linked dir');
+      await symlink(path.join(base, 'a#b'), linked, process.platform === 'win32' ? 'junction' : 'dir');
+      const out = execFileSync(process.execPath, [path.join(linked, 'validate_palette.mjs'), '#0072B2', '#D55E00'], { encoding: 'utf8' });
+      expect(out, 'through a link').toMatch(/PASS/);
     } finally {
       await rm(base, { recursive: true, force: true });
     }

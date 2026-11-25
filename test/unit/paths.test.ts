@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PathGuard, isSensitivePath } from '../../src/workspace/paths';
+import { PathGuard, isSensitivePath, realPath } from '../../src/workspace/paths';
 
 let base: string;
 let ws: string;
@@ -57,6 +57,26 @@ describe('PathGuard', () => {
       return;
     }
     expect(guard.resolve('link/file.txt').zone).toBe('outside');
+  });
+
+  // macOS opens /var through /private/var and Windows can open a folder by its 8.3 name (C:\Users\RUNNER~1), so the
+  // path VS Code reports for a workspace is often not its real path. Junctions need no special rights on Windows.
+  it('shows workspace-relative names when the workspace and scratchpad are opened through a link', async () => {
+    const linkedWs = path.join(base, 'ws via link');
+    const linkedScratch = path.join(base, 'scratch via link');
+    await symlink(ws, linkedWs, process.platform === 'win32' ? 'junction' : 'dir');
+    await symlink(scratch, linkedScratch, process.platform === 'win32' ? 'junction' : 'dir');
+    const linked = new PathGuard(() => [linkedWs], linkedScratch);
+    const real = realPath(path.join(ws, 'src', 'a.ts'));
+
+    for (const p of [path.join(linkedWs, 'src', 'a.ts'), path.join(ws, 'src', 'a.ts'), real, path.join(linkedWs, 'src', 'new.ts')]) {
+      const r = linked.classify(p);
+      expect(r.zone, p).toBe('workspace');
+      expect(r.display, p).toMatch(/^src\/(a|new)\.ts$/);
+    }
+    expect(linked.resolve('src/a.ts').display).toBe('src/a.ts');
+    expect(linked.classify(realPath(path.join(scratch, 'x.js'))).display).toBe('<scratchpad>/x.js');
+    expect(linked.classify(path.join(linkedScratch, 'x.js')).display).toBe('<scratchpad>/x.js');
   });
 
   it('follows dangling links, whose target a write would create outside the workspace', async () => {

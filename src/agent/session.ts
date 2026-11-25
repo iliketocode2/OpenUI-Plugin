@@ -160,10 +160,11 @@ export class AgentSession {
     this.questions.get(itemId)?.(answers);
   }
 
-  async rewindPreview(userItemId: string): Promise<PlannedChange[] | undefined> {
+  async rewindPreview(userItemId: string): Promise<(PlannedChange & { display: string })[] | undefined> {
     const item = this.transcript.find((t) => t.id === userItemId);
     if (!item || item.kind !== 'user' || !item.checkpoint) return undefined;
-    return this.env.checkpoints.plan(item.checkpoint);
+    const plan = await this.env.checkpoints.plan(item.checkpoint);
+    return plan.map((c) => ({ ...c, display: this.env.paths.classify(c.absolute).display }));
   }
 
   async rewind(userItemId: string, scope: RewindScope): Promise<{ text: string; result?: RewindResult } | undefined> {
@@ -209,8 +210,10 @@ export class AgentSession {
   async reviewDecision(itemId: string, absolute: string | undefined, decision: 'keep' | 'revert'): Promise<void> {
     const item = this.transcript.find((t) => t.id === itemId);
     if (!item || item.kind !== 'review' || this.busy) return;
+    // Review files are stored by real path (checkpoints track them that way); accept any spelling of the same file.
+    const target = absolute === undefined ? undefined : realPath(absolute);
     for (const f of item.files) {
-      if (f.decision || (absolute && f.absolute !== absolute)) continue;
+      if (f.decision || (target !== undefined && f.absolute !== target)) continue;
       if (decision === 'revert' && !(await this.env.checkpoints.revertFile(item.checkpoint, f.absolute).catch(() => false))) {
         this.pushWarning(`Could not revert ${f.display}.`);
         f.decision = 'kept';

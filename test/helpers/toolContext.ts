@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import type { AskUserQuestion, TodoItem, ToolCardUpdate } from '../../src/shared/protocol';
@@ -44,8 +44,15 @@ const shells = new ShellRegistry();
 export async function createToolEnv(
   opts: { ripgrep?: string; vision?: boolean; shell?: string; answers?: (q: AskUserQuestion[]) => string[][]; baseUrl?: string; apiKey?: string } = {},
 ): Promise<TestEnv> {
-  const workspace = await mkdtemp(path.join(tmpdir(), 'owui tools ws '));
-  const scratchpad = await mkdtemp(path.join(tmpdir(), 'owui tools scratch '));
+  // Opened through links, as on CI (macOS /var → /private/var, Windows 8.3 names). Junctions need no rights on Windows.
+  const base = await mkdtemp(path.join(tmpdir(), 'owui tools '));
+  const link = process.platform === 'win32' ? 'junction' : 'dir';
+  await mkdir(path.join(base, 'real ws'));
+  await mkdir(path.join(base, 'real scratch'));
+  const workspace = path.join(base, 'ws');
+  const scratchpad = path.join(base, 'scratch');
+  await symlink(path.join(base, 'real ws'), workspace, link);
+  await symlink(path.join(base, 'real scratch'), scratchpad, link);
   const updates: ToolCardUpdate[] = [];
   const todos: TodoItem[][] = [];
   const createdDirs: string[] = [];
@@ -90,8 +97,7 @@ export async function createToolEnv(
     async cleanup() {
       await browser?.close();
       await processes.stopAll();
-      await rm(workspace, { recursive: true, force: true }).catch(() => undefined);
-      await rm(scratchpad, { recursive: true, force: true }).catch(() => undefined);
+      await rm(base, { recursive: true, force: true }).catch(() => undefined);
     },
   };
 }

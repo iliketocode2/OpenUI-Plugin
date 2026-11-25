@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { AgentSession, type RunContext } from '../../src/agent/session';
@@ -60,8 +60,14 @@ export interface Harness {
 }
 
 export async function createHarness(opts: HarnessOptions): Promise<Harness> {
-  const workspace = await mkdtemp(path.join(tmpdir(), 'owui agent ws '));
-  const scratchpad = await mkdtemp(path.join(tmpdir(), 'owui agent scratch '));
+  // The workspace is opened through a link, as VS Code reports it on CI: macOS reaches the temp folder through
+  // /var → /private/var and Windows through an 8.3 name (RUNNER~1). Junctions need no special rights on Windows.
+  const base = await mkdtemp(path.join(tmpdir(), 'owui agent '));
+  await mkdir(path.join(base, 'real ws'));
+  const workspace = path.join(base, 'ws');
+  await symlink(path.join(base, 'real ws'), workspace, process.platform === 'win32' ? 'junction' : 'dir');
+  const scratchpad = path.join(base, 'scratch');
+  await mkdir(scratchpad);
   const shells = new ShellRegistry();
   const egress = new Egress(() => opts.baseUrl);
   let browser: BrowserSession | undefined;
@@ -165,8 +171,7 @@ export async function createHarness(opts: HarnessOptions): Promise<Harness> {
     },
     async cleanup() {
       await session.dispose();
-      await rm(workspace, { recursive: true, force: true }).catch(() => undefined);
-      await rm(scratchpad, { recursive: true, force: true }).catch(() => undefined);
+      await rm(base, { recursive: true, force: true }).catch(() => undefined);
     },
   });
   return harness;

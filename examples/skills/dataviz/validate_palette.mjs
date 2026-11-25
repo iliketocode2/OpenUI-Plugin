@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Validates a categorical colour palette for contrast and colour-vision-deficiency safety. No dependencies.
+import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const MIN_CONTRAST = 3;
 const MIN_DE_NORMAL = 15;
@@ -155,5 +156,16 @@ function main(argv) {
   return result.ok ? 0 : 1;
 }
 
-const invokedDirectly = !!process.argv[1] && import.meta.url.toLowerCase() === pathToFileURL(resolve(process.argv[1])).href.toLowerCase();
+// Node gives this module its real path (/private/var/… on macOS) but leaves argv[1] as typed (/var/…), so compare
+// both after resolving links and short names; comparing file URLs also keeps #, % and spaces in folder names safe.
+function realFileUrl(p) {
+  let real = resolve(p);
+  try {
+    real = realpathSync.native(real);
+  } catch {
+    // Keep the path as given; it then matches only if it was already real.
+  }
+  return pathToFileURL(real).href.toLowerCase();
+}
+const invokedDirectly = !!process.argv[1] && realFileUrl(fileURLToPath(import.meta.url)) === realFileUrl(process.argv[1]);
 if (invokedDirectly) process.exitCode = main(process.argv.slice(2));

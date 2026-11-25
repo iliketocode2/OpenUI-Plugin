@@ -16,6 +16,8 @@ Fixes:
 - Esc stops the agent from anywhere in the chat view, but no longer when it closes the history panel or is pressed in a text field.
 - The browser tool opens a new page after the app closes its window, and a new browser after the browser exits. Before, every later action failed with "Target page, context or browser has been closed".
 - Rewind and review treat `src/A.ts` and `SRC/a.ts`, or a path through a folder link, as one file. Before, a rewind could restore an intermediate version.
+- File names in the review list, approvals and the rewind confirmation stay relative to the workspace when it was opened through a link or a short name (macOS `/var` → `/private/var`, Windows `C:\Users\RUNNER~1`). Before, they showed as `../../../private/var/…/file.txt`.
+- The example palette validator prints its result when run from a folder reached through a link. Before, it printed nothing on macOS.
 
 Settings:
 

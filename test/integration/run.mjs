@@ -1,6 +1,6 @@
 import { runTests } from '@vscode/test-electron';
 import * as esbuild from 'esbuild';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,12 @@ await esbuild.build({
   logLevel: 'warning',
 });
 
-const workspace = await mkdtemp(join(tmpdir(), 'owui agent workspace '));
+// VS Code is given the workspace through a link, as happens on CI runners and real machines (macOS /var →
+// /private/var, Windows 8.3 names such as RUNNER~1), so path-display bugs show up locally too.
+const workspaceBase = await mkdtemp(join(tmpdir(), 'owui agent workspace '));
+await mkdir(join(workspaceBase, 'real'));
+const workspace = join(workspaceBase, 'opened via link');
+await symlink(join(workspaceBase, 'real'), workspace, process.platform === 'win32' ? 'junction' : 'dir');
 await writeFile(join(workspace, 'README.md'), '# Integration workspace\n');
 const userData = await mkdtemp(join(tmpdir(), 'owui-agent-user-'));
 
@@ -52,7 +57,7 @@ try {
 } catch (e) {
   console.error(e);
 } finally {
-  await rm(workspace, { recursive: true, force: true }).catch(() => undefined);
+  await rm(workspaceBase, { recursive: true, force: true }).catch(() => undefined);
   await rm(userData, { recursive: true, force: true }).catch(() => undefined);
 }
 process.exit(code);
