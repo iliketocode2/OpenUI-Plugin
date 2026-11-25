@@ -21,12 +21,14 @@ function run(label, args) {
 
 run('third-party notices are current', [join(root, 'scripts', 'third-party-notices.mjs'), '--check']);
 run('production build', [join(root, 'esbuild.mjs'), '--production']);
-run('package', [bin('@vscode', 'vsce', 'vsce'), 'package', '--out', out]);
+// The extension's page inside VS Code; README.md (the GitHub page) uses SVG images, which VS Code and vsce refuse.
+const readme = 'docs/extension-page.md';
+run('package', [bin('@vscode', 'vsce', 'vsce'), 'package', '--readme-path', readme, '--out', out]);
 
-const listing = execFileSync(node, [bin('@vscode', 'vsce', 'vsce'), 'ls'], { cwd: root, encoding: 'utf8' })
+const listing = execFileSync(node, [bin('@vscode', 'vsce', 'vsce'), 'ls', '--readme-path', readme], { cwd: root, encoding: 'utf8' })
   .split(/\r?\n/)
   .filter(Boolean);
-const required = ['package.json', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md','dist/extension.js', 'dist/webview/main.js', 'dist/webview/styles.css', 'media/icon.svg', 'examples/skills/dataviz/SKILL.md', 'examples/skills/dataviz/validate_palette.mjs', 'node_modules/playwright-core/package.json'];
+const required = ['package.json', readme, 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'dist/extension.js', 'dist/webview/main.js', 'dist/webview/styles.css', 'media/icon.svg', 'examples/skills/dataviz/SKILL.md', 'examples/skills/dataviz/validate_palette.mjs', 'node_modules/playwright-core/package.json'];
 const missing = required.filter((f) => !listing.includes(f));
 const forbidden = listing.filter((f) => /\.map$|^src\/|^test\/|^webview\/src\/|^\.vscode|^out\/|\.vsix$|node_modules\/(?!playwright-core\/)/.test(f));
 const size = statSync(out).size;

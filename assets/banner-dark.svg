@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="380" viewBox="0 0 1280 380" role="img" aria-label="OWUI Agent: a coding agent for VS Code that talks only to your own Open WebUI server">
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#2b2b2b"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#181818" stop-opacity="1"/>
+      <stop offset="0.5" stop-color="#181818" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#181818" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="380" rx="18" fill="#181818"/>
+  <rect width="1280" height="380" rx="18" fill="url(#dots)"/>
+  <rect width="1280" height="380" rx="18" fill="url(#fade)"/>
+  <rect x="0.5" y="0.5" width="1279" height="379" rx="18" fill="none" stroke="#2b2b2b"/>
+
+  <g transform="translate(64 74) scale(3.8333333333333335)" fill="none" stroke="#4daafc" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3l7.5 4.3v8.4L12 20l-7.5-4.3V7.3z"/><path d="M9 10.5l2 2 4-4"/><path d="M8 16h8"/>
+  </g>
+  <text x="168" y="150" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="76" font-weight="700" letter-spacing="-2.5" fill="#e8e8e8">OWUI Agent</text>
+  <text x="72" y="222" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="27" font-weight="600" letter-spacing="-0.4" fill="#e8e8e8">A coding agent for VS Code that talks</text>
+  <text x="72" y="256" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="27" font-weight="600" letter-spacing="-0.4" fill="#e8e8e8">only to your own Open WebUI.</text>
+  <text x="72" y="298" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="18" fill="#cccccc">It plans, edits files, runs your tests and fixes its mistakes,</text>
+  <text x="72" y="324" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="18" fill="#cccccc">and asks you before anything risky.</text>
+
+  <rect x="668" y="48" width="568" height="284" rx="12" fill="#1f1f1f" stroke="#2b2b2b"/>
+  <path d="M668 92h568" stroke="#2b2b2b"/>
+  <circle cx="692" cy="70" r="6" fill="#2b2b2b"/>
+  <circle cx="712" cy="70" r="6" fill="#2b2b2b"/>
+  <circle cx="732" cy="70" r="6" fill="#2b2b2b"/>
+  <text x="1212" y="76" text-anchor="end" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace" font-size="14" fill="#9d9d9d">settings.json</text>
+  <text x="694" y="130" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16.5" xml:space="preserve"><tspan fill="#cccccc">{</tspan></text>
+  <text x="694" y="156" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16.5" xml:space="preserve"><tspan fill="#cccccc">  </tspan><tspan fill="#6a9955">// the only place the extension connects to</tspan></text>
+  <text x="694" y="182" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16.5" xml:space="preserve"><tspan fill="#cccccc">  </tspan><tspan fill="#9cdcfe">"owuiAgent.baseUrl"</tspan><tspan fill="#cccccc">:</tspan><tspan fill="#cccccc"> </tspan><tspan fill="#ce9178">"http://localhost:3000"</tspan><tspan fill="#cccccc">,</tspan></text>
+  <text x="694" y="208" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16.5" xml:space="preserve"></text>
+  <text x="694" y="234" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16.5" xml:space="preserve"><tspan fill="#cccccc">  </tspan><tspan fill="#6a9955">// everything else asks first</tspan></text>
+  <text x="694" y="260" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16.5" xml:space="preserve"><tspan fill="#cccccc">  </tspan><tspan fill="#9cdcfe">"owuiAgent.commands.allowlist"</tspan><tspan fill="#cccccc">:</tspan><tspan fill="#cccccc"> </tspan><tspan fill="#cccccc">[</tspan><tspan fill="#ce9178">"npm test"</tspan><tspan fill="#cccccc">]</tspan><tspan fill="#cccccc">,</tspan></text>
+  <text x="694" y="286" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16.5" xml:space="preserve"><tspan fill="#cccccc">  </tspan><tspan fill="#9cdcfe">"owuiAgent.web.enabled"</tspan><tspan fill="#cccccc">:</tspan><tspan fill="#cccccc"> </tspan><tspan fill="#569cd6">false</tspan></text>
+  <text x="694" y="312" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16.5" xml:space="preserve"><tspan fill="#cccccc">}</tspan></text>
+</svg>

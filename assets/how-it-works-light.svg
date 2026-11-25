@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="452" viewBox="0 0 1280 452" role="img" aria-label="How OWUI Agent connects: the agent in VS Code sends every request through one egress guard, which allows only your Open WebUI server; Open WebUI serves your model and, if you enable it, web search through your SearXNG. Requests to any other host are refused. The optional browser tool opens only localhost pages in your own Chrome or Edge. Commands you approve run in your own shell, outside the guard.">
+  <rect width="1280" height="452" rx="18" fill="#f8f8f8"/>
+  <rect x="0.5" y="0.5" width="1279" height="451" rx="18" fill="none" stroke="#e5e5e5"/>
+  
+  <rect x="32" y="40" width="288" height="150" rx="12" fill="#ffffff" stroke="#e5e5e5"/>
+  <text x="52" y="76" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="650" fill="#1f1f1f">VS Code: OWUI Agent</text>
+  <text x="52" y="102" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">agent loop and tools</text>
+  <text x="52" y="124" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">asks before edits and commands</text>
+  <text x="52" y="146" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">checkpoints for rewind</text>
+  <path d="M320 115 L362 115" stroke="#767676" stroke-width="1.8" fill="none"/>
+  <path d="M362 115 L353.8959760788259,111.08531019299893 L353.8959760788259,118.91468980700107 Z" fill="#767676"/>
+  
+  <rect x="366" y="40" width="268" height="150" rx="12" fill="#e8f1fb" stroke="#005fb8"/>
+  <text x="386" y="76" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="650" fill="#1f1f1f">Egress guard</text>
+  <text x="386" y="102" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">one destination:</text>
+  <text x="386" y="124" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">your Open WebUI server</text>
+  <text x="386" y="146" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">redirects checked again</text>
+  <path d="M634 115 L676 115" stroke="#767676" stroke-width="1.8" fill="none"/>
+  <path d="M676 115 L667.8959760788259,111.08531019299893 L667.8959760788259,118.91468980700107 Z" fill="#767676"/>
+  
+  <rect x="680" y="40" width="270" height="150" rx="12" fill="#ebf4ea" stroke="#388a34"/>
+  <text x="700" y="76" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="650" fill="#1f1f1f">Your Open WebUI</text>
+  <text x="700" y="102" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">models and chat completions</text>
+  <text x="700" y="124" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">optional web search</text>
+  <text x="700" y="146" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">through your SearXNG</text>
+  <path d="M950 115 L992 115" stroke="#767676" stroke-width="1.8" fill="none"/>
+  <path d="M992 115 L983.8959760788259,111.08531019299893 L983.8959760788259,118.91468980700107 Z" fill="#767676"/>
+  
+  <rect x="996" y="40" width="252" height="150" rx="12" fill="#ffffff" stroke="#e5e5e5"/>
+  <text x="1016" y="76" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="650" fill="#1f1f1f">Your model</text>
+  <text x="1016" y="102" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">served by Open WebUI,</text>
+  <text x="1016" y="124" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">for example Ollama on</text>
+  <text x="1016" y="146" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">your own hardware</text>
+
+  <path d="M500 190 L500 268" stroke="#c42b1c" stroke-width="1.8" fill="none"/>
+  <path d="M500 268 L503.9146898070011,259.8959760788259 L496.0853101929989,259.8959760788259 Z" fill="#c42b1c"/>
+  <rect x="366" y="272" width="268" height="140" rx="12" fill="#fbeceb" stroke="#c42b1c"/>
+  <text x="386" y="308" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="650" fill="#c42b1c">Any other host: refused</text>
+  <text x="386" y="334" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">no telemetry, analytics,</text>
+  <text x="386" y="356" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">update checks, CDNs</text>
+  <text x="386" y="378" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">or font downloads</text>
+
+  <path d="M176 190 L176 268" stroke="#767676" stroke-width="1.8" fill="none" stroke-dasharray="6 5"/>
+  <path d="M176 268 L179.91468980700108,259.8959760788259 L172.08531019299892,259.8959760788259 Z" fill="#767676"/>
+  
+  <rect x="32" y="272" width="288" height="140" rx="12" fill="#ffffff" stroke="#e5e5e5"/>
+  <text x="52" y="308" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="650" fill="#1f1f1f">Browser tool (opt-in)</text>
+  <text x="52" y="334" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">your Chrome or Edge,</text>
+  <text x="52" y="356" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">localhost pages only;</text>
+  <text x="52" y="378" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">other hosts go to a refusing proxy</text>
+
+  <rect x="680" y="272" width="568" height="140" rx="12" fill="none" stroke="#767676" stroke-dasharray="6 5"/>
+  <text x="700" y="308" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="650" fill="#1f1f1f">Outside the guard: commands you approve</text>
+  <text x="700" y="334" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">They run in your shell with your privileges and can reach the</text>
+  <text x="700" y="356" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">internet like any program you run (npm install, git push).</text>
+  <text x="700" y="378" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif" font-size="15.5" fill="#3b3b3b">The extension also cannot tell where a model really runs.</text>
+</svg>

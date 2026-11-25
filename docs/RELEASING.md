@@ -14,7 +14,7 @@ Nothing is published if any step fails. A tag with a hyphen (`v0.3.0-beta.1`) be
 2. Pick the version ([semantic versioning](https://semver.org/); while the major version is 0, a minor bump may break things).
 3. Set the version in `package.json` and `package-lock.json`: `npm version <version> --no-git-tag-version`.
 4. In `CHANGELOG.md`, rename `## Unreleased` to `## <version> — <YYYY-MM-DD>`, and start a new empty `## Unreleased` above it if you like.
-5. If dependencies changed, run `npm run notices` and commit `THIRD_PARTY_NOTICES.md`. (`npm run package` refuses to build when it is out of date.)
+5. If dependencies changed, run `npm run notices` and commit `THIRD_PARTY_NOTICES.md`. (`npm run package` refuses to build when it is out of date.) If features or settings changed, update both `README.md` (the GitHub page) and `docs/extension-page.md` (the page shown inside VS Code, which can't use the README's SVG images).
 6. Check locally: `npm run check` and `npm run package`.
 7. Commit, then tag and push:
 
