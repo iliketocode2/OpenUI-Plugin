@@ -61,8 +61,18 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm test
       - name: Browser tests (installed Chrome or Edge)
+        id: browser
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          OWUI_BROWSER_DEBUG_LOG: ${{ runner.temp }}/playwright-debug.log
         run: npm run test:browser
+      - name: Upload the Playwright log of failed browser tests
+        if: ${{ !cancelled() && steps.browser.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-debug-${{ runner.os }}
+          path: ${{ runner.temp }}/playwright-debug.log
+          if-no-files-found: warn
       - name: VS Code integration tests (Linux)
         if: ${{ !cancelled() && steps.install.outcome == 'success' && runner.os == 'Linux' }}
         run: xvfb-run -a npm run test:integration

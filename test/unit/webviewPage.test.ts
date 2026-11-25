@@ -154,7 +154,8 @@ describe('chat view page', () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await send({ type: 'state', state: viewState([approval('t2')], true) });
     await page.waitForSelector('.approval');
-    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe('Allow');
+    // Focus moves in an effect that runs just after the card is on screen, so poll rather than read it once.
+    await expect.poll(() => page.evaluate(() => document.activeElement?.textContent?.trim())).toBe('Allow');
   });
 
   it('stops the agent with Esc from the view, once from the composer, and not when Esc closes something', async () => {

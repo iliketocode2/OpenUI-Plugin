@@ -12,6 +12,29 @@ export interface BrowserOptions extends BrowserPolicy {
   loadPlaywright?: () => Promise<typeof import('playwright-core')>;
 }
 
+/** The features Playwright disables itself (playwright-core 1.63, src/server/chromium/chromiumSwitches.ts). Chrome
+ * keeps only the last --disable-features it is given, so ours would otherwise replace Playwright's list, and without
+ * AvoidUnnecessaryBeforeUnloadCheckSync page.close() can hang (playwright#14047), which hung the Linux CI.
+ * test/unit/browserArgs.test.ts fails when an upgraded Playwright disables a feature missing here. */
+export const PLAYWRIGHT_DISABLED_FEATURES = [
+  'AvoidUnnecessaryBeforeUnloadCheckSync', 'DestroyProfileOnBrowserClose', 'DialMediaRouteProvider', 'GlobalMediaControls', 'HttpsUpgrades',
+  'LensOverlay', 'MediaRouter', 'PaintHolding', 'ThirdPartyStoragePartitioning', 'BlockOriginHeaderModificationOnRedirect', 'Translate',
+  'AutoDeElevate', 'OptimizationHints', 'msForceBrowserSignIn', 'msEdgeUpdateLaunchServicesPreferredVersion',
+];
+
+/** Background features that would contact Google or Microsoft. The proxy refuses that traffic anyway; this keeps the
+ * browser from trying. */
+const PRIVACY_DISABLED_FEATURES = [
+  'OptimizationHints', 'OptimizationGuideModelDownloading', 'OptimizationHintsFetching', 'MediaRouter', 'Translate', 'AutofillServerCommunication',
+  'CertificateTransparencyComponentUpdater', 'InterestFeedContentSuggestions', 'PrivacySandboxSettings4', 'NetworkTimeServiceQuerying', 'SafeBrowsing',
+  'ChromeWhatsNewUI', 'AccountConsistency', 'SignInProfileCreation', 'DialMediaRouteProvider', 'GlobalMediaControls',
+];
+
+/** The one --disable-features list the browser gets: Playwright's and ours. */
+export function disabledFeatures(): string[] {
+  return [...new Set([...PLAYWRIGHT_DISABLED_FEATURES, ...PRIVACY_DISABLED_FEATURES])];
+}
+
 const CHROME_ARGS = [
   '--disable-background-networking',
   '--disable-component-update',
@@ -28,7 +51,7 @@ const CHROME_ARGS = [
   '--disable-signin-promo',
   '--disable-search-engine-choice-screen',
   '--disable-background-timer-throttling',
-  '--disable-features=OptimizationHints,OptimizationGuideModelDownloading,OptimizationHintsFetching,MediaRouter,Translate,AutofillServerCommunication,CertificateTransparencyComponentUpdater,InterestFeedContentSuggestions,PrivacySandboxSettings4,NetworkTimeServiceQuerying,SafeBrowsing,ChromeWhatsNewUI,AccountConsistency,SignInProfileCreation,DialMediaRouteProvider,GlobalMediaControls',
+  `--disable-features=${disabledFeatures().join(',')}`,
 ];
 
 const MAX_LOG = 200;

@@ -22,6 +22,13 @@ document.title = 'Fixture App ' + (matchMedia('(prefers-color-scheme: dark)').ma
 setTimeout(() => { throw new Error('boom from app'); }, 10);
 </script></body></html>`;
 
+// CI sets this to keep Playwright's own log of every call and of the browser process, uploaded when the step fails.
+// Playwright is loaded on the first launch, after this runs, and this file runs in a worker process of its own.
+if (process.env.OWUI_BROWSER_DEBUG_LOG) {
+  process.env.DEBUG = 'pw:api,pw:browser';
+  process.env.DEBUG_FILE = process.env.OWUI_BROWSER_DEBUG_LOG;
+}
+
 /** Fails with the step's name, so a hang on a CI machine says which call never returned. */
 function step<T>(name: string, promise: Promise<T>, ms = 45_000): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
