@@ -108,8 +108,9 @@ export class BrowserSession {
     let response;
     try {
       for (let attempt = 0; ; attempt++) {
+        // A final, non-redirect response for the main frame: the page this navigation is loading.
         const mainResponse = page
-          .waitForResponse((r) => r.request().isNavigationRequest() && r.request().frame() === page.mainFrame(), { timeout: timeoutMs })
+          .waitForResponse((r) => r.request().isNavigationRequest() && r.request().frame() === page.mainFrame() && (r.status() < 300 || r.status() >= 400), { timeout: timeoutMs })
           .catch(() => null);
         try {
           response = await page.goto(url, { waitUntil: 'commit', timeout: timeoutMs });
@@ -117,21 +118,22 @@ export class BrowserSession {
           break;
         } catch (e) {
           const msg = (e as Error).message;
-          if (/interrupted by another navigation/i.test(msg)) {
-            const seen = await Promise.race([mainResponse, new Promise<null>((r) => setTimeout(() => r(null), 3_000))]);
-            if (seen) {
-              response = seen;
-              await page.waitForLoadState('load', { timeout: 10_000 }).catch(() => undefined);
-              break;
-            }
-            if (attempt < 2) continue;
-          }
-          throw e;
+          if (!/interrupted by another navigation/i.test(msg)) throw e;
+          // Another navigation (the app's own, or a late one from before) replaced ours. Let it settle and start again:
+          // a response alone does not mean its page is showing yet, and returning then left the old page in place.
+          await page.waitForLoadState('load', { timeout: 10_000 }).catch(() => undefined);
+          if (attempt < 2) continue;
+          // An app that keeps navigating as it loads: settle for the page our request produced, once it has loaded.
+          const seen = await Promise.race([mainResponse, new Promise<null>((r) => setTimeout(() => r(null), 3_000))]);
+          if (!seen) throw e;
+          await page.waitForURL(seen.url(), { waitUntil: 'load', timeout: 10_000 }).catch(() => undefined);
+          response = seen;
+          break;
         }
       }
     } catch (e) {
       const msg = (e as Error).message;
-      await page.goto('about:blank', { timeout: 10_000 }).catch(() => undefined);
+      await this.reset(page);
       if (/ERR_CONNECTION_REFUSED|ECONNREFUSED/i.test(msg)) {
         throw new Error(`Nothing is listening at ${url}. Start the dev server first (start_process with wait_for_port), then try again.`);
       }
@@ -142,10 +144,21 @@ export class BrowserSession {
     }
     const finalUrl = page.url();
     if (!isAllowedBrowserUrl(finalUrl, this.opts)) {
-      await page.goto('about:blank').catch(() => undefined);
+      await this.reset(page);
       throw new Error(`The page redirected to ${finalUrl}, which is outside the allowed local hosts, so it was closed.`);
     }
     return { status: response?.status(), url: finalUrl, title: await page.title().catch(() => '') };
+  }
+
+  /** Leaves the page on about:blank after a failed or refused navigation. Chrome commits its error page only after it
+   * reports the failure, and that late commit can interrupt this navigation while leaving it pending, to replace the
+   * next page the agent opens. So check where the page really is, and try again. */
+  private async reset(page: Page): Promise<void> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await page.goto('about:blank', { waitUntil: 'load', timeout: 10_000 }).catch(() => undefined);
+      if (page.url() === 'about:blank') return;
+      await page.waitForLoadState('load', { timeout: 5_000 }).catch(() => undefined);
+    }
   }
 
   async screenshot(fullPage: boolean): Promise<{ data: Buffer; mime: 'image/png' | 'image/jpeg' }> {

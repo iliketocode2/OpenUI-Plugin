@@ -118,6 +118,24 @@ describe('browser tool egress (headless Chrome/Edge)', () => {
     await expect(session.navigate(`http://127.0.0.1:${port}/`)).rejects.toThrow(/Nothing is listening/);
   }, 60_000);
 
+  // Chrome commits its error page after reporting the failure, which used to interrupt the reset to about:blank and
+  // leave that navigation pending; the next navigate then returned before its page had replaced the old one, and
+  // closing the page in that moment hung Chrome (the Linux and macOS CI hangs).
+  it('after a failed load, the next navigate returns only once its page is really there', async () => {
+    const probe = http.createServer();
+    await new Promise<void>((r) => probe.listen(0, '127.0.0.1', () => r()));
+    const closed = `http://127.0.0.1:${(probe.address() as AddressInfo).port}/`;
+    await new Promise<void>((r) => probe.close(() => r()));
+    const internals = session as unknown as { page: { url(): string } };
+    for (let i = 0; i < 5; i++) {
+      await expect(step('navigate to nothing', session.navigate(closed))).rejects.toThrow(/Nothing is listening/);
+      const nav = await step('navigate after the failure', session.navigate(`${base}/`));
+      expect(nav.status, `round ${i}`).toBe(200);
+      expect(internals.page.url(), `round ${i}`).toBe(`${base}/`);
+      expect(nav.title, `round ${i}`).toMatch(/^Fixture App/);
+    }
+  }, 120_000);
+
   it('opens a new page after the page closes, and a new browser after the browser exits', async () => {
     type Context = { close(): Promise<void>; once(event: 'close', cb: () => void): void };
     const internals = session as unknown as { page: { close(): Promise<void> }; context: Context; proxy: unknown };
