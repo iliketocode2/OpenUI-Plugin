@@ -35,6 +35,27 @@ function App() {
   const prevBusy = useRef(busy);
   const busyRef = useRef(busy);
   busyRef.current = busy;
+  const closeHistory = () => {
+    setHistory((h) => ({ ...h, open: false }));
+    inputRef.current?.focus();
+  };
+  // Set while rendering, so it is current as soon as the panel is on screen; the panel's own focus effect runs later.
+  const historyOpenRef = useRef(history.open);
+  historyOpenRef.current = history.open;
+  const closeHistoryRef = useRef(closeHistory);
+  closeHistoryRef.current = closeHistory;
+  // While the history is open, Esc closes it wherever focus is (the search box, the composer, or nothing after a
+  // click on blank space) and goes no further, so it can never stop the agent. Capture runs before every other handler.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !historyOpenRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeHistoryRef.current();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, []);
   // Esc stops the agent from anywhere in the view, unless something else used the key first: closing the history,
   // or a text field. A VS Code keybinding would fire for those too, and stop a run by accident.
   useEffect(() => {
@@ -72,10 +93,7 @@ function App() {
           entries={history.entries}
           query={history.query}
           currentId={state.sessionId}
-          onClose={() => {
-            setHistory((h) => ({ ...h, open: false }));
-            inputRef.current?.focus();
-          }}
+          onClose={closeHistory}
         />
       ) : (
         <Transcript items={state.transcript} busy={busy} />

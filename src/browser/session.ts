@@ -32,6 +32,17 @@ const CHROME_ARGS = [
 ];
 
 const MAX_LOG = 200;
+const NEW_PAGE_TIMEOUT_MS = 15_000;
+const CLOSE_TIMEOUT_MS = 10_000;
+
+/** Rejects if `promise` has not settled within `ms`, for Playwright calls that take no timeout of their own. */
+function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} did not finish within ${ms / 1000} s.`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 export class BrowserUnavailableError extends Error {
   constructor(message: string) {
@@ -52,6 +63,8 @@ export class BrowserSession {
   private proxy: BlackholeProxy | undefined;
   /** False once the browser has exited (it crashed, or was closed), so the next action starts a new one. */
   private contextAlive = false;
+  /** Numbers each browser's profile folder, so a new browser never shares one with a browser that is still exiting. */
+  private launches = 0;
   channelUsed: string | undefined;
   readonly logs = { console: [] as string[], errors: [] as string[], failed: [] as string[], blocked: [] as string[] };
 
@@ -162,15 +175,19 @@ export class BrowserSession {
   async close(): Promise<void> {
     this.starting = undefined;
     await this.teardown();
+    // On Windows a browser that is still exiting keeps its profile files open; keep trying for a few seconds more.
+    // Anything still left is removed at a later startup.
+    await rm(this.opts.profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => undefined);
   }
 
-  /** Closes the browser and its proxy and deletes the profile, which a new browser could not use while it is locked. */
+  /** Closes the browser and its proxy and deletes the profile. A browser that does not close in time is left behind:
+   * the next one gets a profile folder of its own, so it never waits for the old one's lock. */
   private async teardown(): Promise<void> {
     const ctx = this.context;
     this.context = undefined;
     this.contextAlive = false;
     this.page = undefined;
-    await ctx?.close().catch(() => undefined);
+    if (ctx) await within(ctx.close(), CLOSE_TIMEOUT_MS, 'Closing the browser').catch(() => undefined);
     await this.proxy?.stop().catch(() => undefined);
     this.proxy = undefined;
     await rm(this.opts.profileDir, { recursive: true, force: true, maxRetries: 3 }).catch(() => undefined);
@@ -191,7 +208,13 @@ export class BrowserSession {
 
   /** The page can close (window.close() in the app, a crashed tab) while the browser runs on; the browser can exit too. */
   private async open(): Promise<Page> {
-    if (this.context && this.contextAlive) return this.watch(await this.context.newPage());
+    if (this.context && this.contextAlive) {
+      try {
+        return this.watch(await within(this.context.newPage(), NEW_PAGE_TIMEOUT_MS, 'Opening a new tab'));
+      } catch {
+        // The browser is exiting or stopped responding (Playwright's newPage has no timeout of its own): start a new one.
+      }
+    }
     await this.teardown();
     return this.launch();
   }
@@ -207,7 +230,7 @@ export class BrowserSession {
     const failures: string[] = [];
     for (const channel of channels) {
       try {
-        this.context = await pw.chromium.launchPersistentContext(path.join(this.opts.profileDir, channel), {
+        this.context = await pw.chromium.launchPersistentContext(path.join(this.opts.profileDir, `${channel}-${++this.launches}`), {
           channel,
           headless: true,
           args: CHROME_ARGS,

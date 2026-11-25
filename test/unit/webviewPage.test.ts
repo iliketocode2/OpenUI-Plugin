@@ -172,11 +172,23 @@ describe('chat view page', () => {
     await page.keyboard.press('Escape');
     expect(await posted('stop')).toHaveLength(2);
 
+    // Esc right after the history opens, before its search box takes focus (slow machines hit this), closes it.
     await send({ type: 'showHistory' });
     await page.waitForSelector('.history');
     await page.keyboard.press('Escape');
-    expect(await page.locator('.history').count()).toBe(0);
+    await expect.poll(() => page.locator('.history').count()).toBe(0);
     expect(await posted('stop')).toHaveLength(2);
+
+    // With focus on nothing (a click on blank space) or in the composer, Esc closes the history and does not stop.
+    for (const focus of ['nothing', 'composer'] as const) {
+      await send({ type: 'showHistory' });
+      await page.waitForSelector('.history');
+      if (focus === 'composer') await page.click('#prompt');
+      else await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.keyboard.press('Escape');
+      await expect.poll(() => page.locator('.history').count(), { message: focus }).toBe(0);
+      expect(await posted('stop'), focus).toHaveLength(2);
+    }
   });
 
   it('does not stop anything with Esc when the agent is idle', async () => {

@@ -23,16 +23,8 @@ export function HistoryPanel({ entries, query, currentId, onClose }: { entries: 
     return () => clearTimeout(t);
   }, [text]);
   return (
-    <section
-      class="history"
-      aria-label="Conversation history"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          onClose();
-        }
-      }}
-    >
+    // Esc is handled by the view (main.tsx), so it closes the history wherever focus is.
+    <section class="history" aria-label="Conversation history">
       <div class="history-head">
         <label class="sr-only" for="history-search">
           Search conversations
