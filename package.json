@@ -2,7 +2,7 @@
   "name": "owui-agent",
   "displayName": "OWUI Agent",
   "description": "Autonomous coding agent that talks only to your self-hosted Open WebUI.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "iliketocode2",
   "private": true,
   "license": "MIT",
