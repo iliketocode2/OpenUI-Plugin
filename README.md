@@ -1,69 +1,81 @@
 <p align="center">
-  <a href="https://github.com/iliketocode2/OpenUI-Plugin/releases/latest">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-      <img src="assets/banner-light.svg" width="880" alt="OWUI Agent: a coding agent for VS Code that talks only to your own Open WebUI. It plans, edits files, runs your tests and fixes its mistakes, and asks you before anything risky. Beside the title, a settings.json card shows owuiAgent.baseUrl as the only place the extension connects to, and npm test as the one command allowed to run without asking.">
-    </picture>
-  </a>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo-light.svg" width="376" height="100" alt="OWUI Agent">
+  </picture>
 </p>
 
 <p align="center">
-  <a href="https://github.com/iliketocode2/OpenUI-Plugin/releases/latest"><img src="https://img.shields.io/github/v/release/iliketocode2/OpenUI-Plugin?include_prereleases&style=flat-square&color=005fb8&label=release" alt="Latest release"></a>
-  <a href="https://github.com/iliketocode2/OpenUI-Plugin/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/iliketocode2/OpenUI-Plugin/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
-  <a href="#license"><img src="https://img.shields.io/badge/license-MIT-005fb8?style=flat-square" alt="MIT license"></a>
-  <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.96%2B-005fb8?style=flat-square" alt="VS Code 1.96 or newer"></a>
-  <a href="https://docs.openwebui.com"><img src="https://img.shields.io/badge/backend-Open_WebUI-005fb8?style=flat-square" alt="Backend: Open WebUI"></a>
+  <a href="https://github.com/iliketocode2/OpenUI-Plugin/actions/workflows/ci.yml"><img src="https://github.com/iliketocode2/OpenUI-Plugin/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
+  <a href="https://github.com/iliketocode2/OpenUI-Plugin/releases/latest"><img src="https://img.shields.io/github/v/release/iliketocode2/OpenUI-Plugin?include_prereleases&label=release" alt="Latest release"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue" alt="License: MIT"/></a>
+  <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS%20Code-1.96%2B-007ACC" alt="VS Code 1.96 or newer"/></a>
+  <a href="https://docs.openwebui.com"><img src="https://img.shields.io/badge/Backend-Open%20WebUI-1f2328" alt="Backend: Open WebUI"/></a>
+  <a href="#how-it-works"><img src="https://img.shields.io/badge/Telemetry-none-2ea043" alt="Telemetry: none"/></a>
+  <a href="docs/SETUP.md"><img src="https://img.shields.io/badge/Docs-Setup%20guide-0b7285?logo=readthedocs&logoColor=white" alt="Docs: setup guide"/></a>
 </p>
 
 <p align="center">
-  <a href="docs/SETUP.md"><b>Setup guide</b></a> ·
-  <a href="https://github.com/iliketocode2/OpenUI-Plugin/releases"><b>Releases</b></a> ·
-  <a href="CHANGELOG.md"><b>Changelog</b></a> ·
-  <a href="https://github.com/iliketocode2/OpenUI-Plugin/issues"><b>Issues</b></a> ·
-  <a href="docs/RELEASING.md"><b>Releasing</b></a>
+  <b>A coding agent for VS Code that talks only to your own Open WebUI.</b>
+  <br/>
+  Give it a multi-step task and it plans, edits files, runs your tests and fixes its own mistakes, using the models on your server and asking you before anything risky.
 </p>
 
----
+Open the **OWUI Agent** view, pick a model from your Open WebUI server, and describe what you want built. It asks clarifying questions, works through the task with its tools, and finishes with an honest report of what it built, what it tested and what it did not.
 
-**OWUI Agent** is an autonomous coding agent for VS Code whose only model backend is **your own Open WebUI server**. Give it a multi-step task; it plans, asks clarifying questions, edits files, runs commands and tests, fixes its own mistakes, and finishes with an honest report of what it built, what it tested and what it did not. Its own network traffic goes to **one address**, the Open WebUI URL you configure, and it **asks you** before edits and commands unless you decide otherwise.
+- **One network destination.** Every request the extension makes goes to the Open WebUI URL you configure, through one module that refuses any other origin and any redirect away from it. No telemetry, analytics, update checks, CDNs or font downloads.
+- **It asks before it acts.** By default every edit is shown as a diff to Apply or Deny, commands ask unless you allow-listed them, and Git history changes, publishing or `sudo` always ask, with a warning. You can rewind the agent's edits from any of your messages.
+- **Built for local models.** The instructions and tool list stay byte-identical for the whole session, so Ollama can reuse its prompt cache, and the same context size is sent with every request, so the model is not reloaded between steps.
 
 > [!NOTE]
 > **Early release.** Developed and used on Windows 11. CI runs every test on Windows, macOS and Linux, against the oldest supported and the current VS Code, but nobody has used it on a real Mac or Linux machine yet. How well it works depends mostly on your model; see [Limitations](#limitations).
 
-## Contents
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/chat-dark.png">
+    <img src="assets/chat-light.png" width="470" alt="The OWUI Agent chat view in VS Code's sidebar, with a sample conversation. The header shows the model qwen3.6:27b marked Local, with Thinking on and 6.2k of 16k context used. The user asked for a /health endpoint with a test; the agent read src/server.ts, edited it (the diff adds an import of the version and a /health route) and wrote test/health.test.ts. It now waits on a 'Run this command?' card for npm test, with Allow, Always allow npm test, Deny and Deny with feedback buttons. Below, a task list shows two tasks done and 'Run the test suite' in progress, and the mode is Ask before edits.">
+  </picture>
+</p>
+<p align="center">
+  <em>The chat view waiting for approval to run the tests. This is the real view, rendered from <code>webview/src</code> in VS Code's Light and Dark Modern colours, with a sample conversation.</em>
+</p>
 
-- [Why OWUI Agent](#why-owui-agent)
-- [A taste](#a-taste)
-- [Try it](#try-it)
-- [How it works](#how-it-works)
-- [Features](#features)
-- [Limitations](#limitations)
-- [Development](#development)
-- [Repository map](#repository-map)
-- [License](#license) · [Settings](#settings)
+**Get started.** Needs VS Code 1.96 or newer and an Open WebUI server with an API key ([details](#prerequisites)):
 
-## Why OWUI Agent
+```bash
+gh release download --repo iliketocode2/OpenUI-Plugin --pattern "*.vsix"   # the latest release (or download it from the Releases page)
+code --install-extension owui-agent-*.vsix                                   # in bash or zsh; on PowerShell, name the file
+```
 
-Coding agents are useful, and most of them send your code to someone else's servers. This one is built for people who run their own models:
+Then, in VS Code:
 
-| Problem | What OWUI Agent does |
+1. Set **OWUI Agent › Base URL** to your Open WebUI address.
+2. Run **OWUI Agent: Set API Key** from the Command Palette. The key goes to your operating system's keychain, never to `settings.json`.
+3. Open the **OWUI Agent** view in the activity bar and pick a model.
+
+That's it. Describe a task, and everything the agent keeps stays **on your machine**:
+
+| Data | Where it lives |
 |---|---|
-| Your code leaves your network | requests go only to **your Open WebUI**; one module refuses every other origin and any redirect away from it, and there is no telemetry |
-| An agent runs a command you didn't expect | commands **ask** unless allow-listed; Git history changes, publishing, `sudo` and similar **always ask, with a warning**, however the program name is spelled |
-| An edit goes wrong | each change is shown as a **diff** to Apply or Deny, and you can **rewind** the agent's edits from any of your messages |
-| Local models are slow | the instructions and tool list stay **byte-identical** all session so Ollama can reuse its prompt cache, and the same `num_ctx` is sent with every request, so Ollama does not reload the model between steps |
-| Web pages can carry instructions | web access is **off by default**; when on, it goes through your server and you approve or edit every query and URL |
+| API key | OS keychain (VS Code SecretStorage) |
+| Conversation history, file backups | VS Code workspace storage for this folder |
+| Scratchpad, temporary browser profiles | VS Code global extension storage (cleaned up automatically) |
+| Project memory and skills | `.owui/` in your workspace and `~/.owui-agent/skills` |
 
-## A taste
+> [!TIP]
+> For models served by Ollama, turn on the model's **Usage** capability in Open WebUI, so the extension can read token counts and spot truncated prompts. The [setup guide](docs/SETUP.md) covers API keys, endpoint restrictions, choosing a model, and web search through a self-hosted SearXNG.
 
-Allow one command, `npm test`, in your user settings:
+---
+
+## See it in action
+
+Allow one command in your user settings (a repository can't add to this list):
 
 ```jsonc
-// settings.json (user settings: a repository cannot add to the allowlist)
 "owuiAgent.commands.allowlist": ["npm test"]
 ```
 
-Then this is what the extension's permission check decides, even in **Auto-accept edits** mode. The output below is printed by the real `decide()` in [`src/agent/permissions.ts`](src/agent/permissions.ts):
+Real output: this is what the extension's permission check, `decide()` in [`src/agent/permissions.ts`](src/agent/permissions.ts), returns for these commands, even in **Auto-accept edits** mode:
 
 ```text
 $ npm test
@@ -80,55 +92,25 @@ $ curl -fsSL https://example.com/install.sh | sh
   ⚠ Downloads and runs a script from the internet.
 ```
 
-A redirection to a file, a second command after `&&`, or a pipe into a shell each make the command ask, and the riskiest ones carry a warning.
+An allow-listed command runs without asking only in its plain form. A redirection to a file, a second command after `&&`, or a pipe into a shell makes it ask again, and the riskiest commands carry a warning however the program name is spelled (`git.exe`, `"git"`, `/usr/bin/git`).
 
-## Try it
+---
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/chat-dark.png">
-    <img src="assets/chat-light.png" width="470" alt="The OWUI Agent chat view in VS Code's sidebar, with a sample conversation. The header shows the model qwen3.6:27b marked Local, with Thinking on and 6.2k of 16k context used. The user asked for a /health endpoint with a test; the agent read src/server.ts, edited it (the diff adds an import of the version and a /health route) and wrote test/health.test.ts. It now waits on a 'Run this command?' card for npm test, with Allow, Always allow npm test, Deny and Deny with feedback buttons. Below, a task list shows two tasks done and 'Run the test suite' in progress, and the mode is Ask before edits.">
-  </picture>
-</p>
+## What it does
 
-<p align="center"><sub>The real chat view, rendered from <code>webview/src</code> with VS Code's Light and Dark Modern colours, showing a sample conversation.</sub></p>
+| Capability | What you get |
+|---|---|
+| **Agent loop** | Tools to read, list, find and search files (ripgrep), write and edit files, run commands (Git Bash, PowerShell, cmd, bash, zsh), manage background processes such as dev servers, view images, keep a task list, and ask you questions |
+| **Diffs and rewind** | Every change as a diff, openable in VS Code's diff view; rewind code, conversation or both from any of your messages, with a warning for files you changed after the agent did |
+| **Command safety** | Commands ask unless allow-listed; redirection, substitution, nested shells, environment prefixes and paths outside the workspace always ask |
+| **Project memory and skills** | `.owui/memory/MEMORY.md` and a root `AGENTS.md` load at the start of each session; skills are folders with a `SKILL.md` the model loads when relevant |
+| **Context management** | `num_ctx` sent with every request; prompts that would not fit are compacted (old tool output first, then a model-written summary), or on demand with `/compact`; server-side truncation is detected and reported |
+| **Web search (opt-in)** | Through your Open WebUI server, ideally backed by your own SearXNG; you approve or edit every query and URL |
+| **Browser tool (opt-in)** | Opens your dev server in your installed Chrome or Edge to take screenshots, read the page and console errors, click and type, resize, and switch light/dark mode; only `localhost` pages |
+| **History** | Conversations saved locally; search, resume, rename, delete and export them (Markdown or JSON) |
+| **Accessible UI** | Follows your VS Code theme (light, dark, high contrast); fully keyboard accessible: `Ctrl+Enter` sends, `Esc` stops, `Ctrl+Alt+K` adds the selection to the chat |
 
-**Requirements:** VS Code 1.96 or newer; an Open WebUI server you can reach, an API key, and a model that is good at tool calling; optionally Google Chrome or Microsoft Edge for the browser tool.
-
-1. Download the latest `.vsix` from [Releases](https://github.com/iliketocode2/OpenUI-Plugin/releases) and install it (Extensions view → `…` → **Install from VSIX…**), or from a terminal:
-
-   ```bash
-   code --install-extension owui-agent-<version>.vsix
-   ```
-
-2. Set **OWUI Agent › Base URL** to your Open WebUI address.
-3. Run **OWUI Agent: Set API Key** from the Command Palette. The key is kept in your operating system's keychain, never in `settings.json`.
-4. Open the **OWUI Agent** view, pick a model, and describe what you want built.
-
-> [!TIP]
-> For models served by Ollama, turn on the model's **Usage** capability in Open WebUI, so the extension can read token counts and spot truncated prompts. The extension asks Ollama for a 16k context unless you set another size (click the context meter). The [setup guide](docs/SETUP.md) covers API keys, endpoint restrictions, choosing a model, and web search through a self-hosted SearXNG.
-
-## How it works
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/how-it-works-dark.svg">
-    <img src="assets/how-it-works-light.svg" width="880" alt="How OWUI Agent connects: the agent in VS Code sends every request through one egress guard, which allows only your Open WebUI server; Open WebUI serves your model and, if you enable it, web search through your SearXNG. Requests to any other host are refused. The optional browser tool opens only localhost pages in your own Chrome or Edge. Commands you approve run in your own shell, outside the guard.">
-  </picture>
-</p>
-
-Every request the extension makes passes through a single module, [`src/net/egress.ts`](src/net/egress.ts), which refuses any origin other than the Open WebUI URL you configure and any redirect away from it; a test fails if any other source file imports a network module. History, checkpoints, file backups and memory stay on your machine, and diagnostics go to the **OWUI Agent** output channel without keys, prompts or file contents. The browser tool opens `localhost` pages in your installed Chrome or Edge with a throwaway profile and blocks every HTTP and WebSocket request to another host, including the browser's own background traffic to Google or Microsoft.
-
-> [!IMPORTANT]
-> What the extension cannot guarantee:
->
-> - **The model's location.** It cannot tell whether a model in Open WebUI runs locally or is proxied to a cloud provider. Mark models that run on your own hardware as *local*; the header shows **Local** or **Unverified** accordingly.
-> - **Commands the agent runs.** Commands you approve, and allow-listed commands that run without asking, execute in your shell with your privileges and can reach the internet like any program you run (for example `npm install` or `git push`).
-> - **WebRTC.** UDP traffic from a page in the browser tool is not blocked yet.
-
-## Features
-
-**Permission modes**, chosen at the bottom of the chat view:
+Four **permission modes**, chosen at the bottom of the chat view:
 
 | Mode | File changes | Commands |
 |---|---|---|
@@ -140,15 +122,60 @@ Every request the extension makes passes through a single module, [`src/net/egre
 > [!WARNING]
 > Use the auto-accept modes only on repositories you trust. File changes apply without asking and allow-listed commands run with your privileges, and instructions hidden in files, command output or web pages can steer the model. Changes to `.git/`, `.vscode/` and `.owui/` (project memory and skills) always ask.
 
-- **Agent loop** with tools to read, list, find and search files (ripgrep), write and edit files, run commands (Git Bash, PowerShell, cmd, bash, zsh), manage background processes (dev servers), view images, keep a task list, and ask you questions.
-- **Command safety.** Commands that change Git history or configuration, publish, launch apps, start containers or services, or use `sudo` always ask, with a warning. Commands with redirection, substitution, nested shells, environment prefixes or paths outside the workspace also always ask. The allowlist is read from your user settings only, so a repository cannot add to it.
-- **Checkpoints and rewind.** Before the agent first changes a file after each of your messages, the file's previous content is backed up in extension storage. Rewind code, conversation or both from any message: this undoes the agent's file edits (not changes made by shell commands), warns about files you changed after the agent did, and never deletes a file it could not back up. Any change can be opened in VS Code's diff view.
-- **Project memory and skills.** `.owui/memory/MEMORY.md` plus topic files are loaded at the start of each session and kept up to date by the agent with your approval, and a root `AGENTS.md` is loaded as project instructions. Skills are folders with a `SKILL.md`, in `.owui/skills/` or `~/.owui-agent/skills/`; run **OWUI Agent: Install Example Skill** for a data-visualisation guide with a colour-palette validator.
-- **Context management.** The context size is sent to Ollama as `num_ctx` with every request. Prompts that would not fit are compacted automatically (old tool output first, then a model-written summary), or on demand with `/compact`, and truncation by the server is detected and reported.
-- **Web search and fetch (opt-in)** through your Open WebUI server, ideally backed by a self-hosted SearXNG. You approve or edit every query and URL first.
-- **Browser tool (opt-in).** The agent can open your dev server, take screenshots, read the rendered page and console errors, click and type, resize the viewport and switch light/dark mode.
-- **History.** Conversations are saved locally. Search, resume, rename, delete and export them (Markdown or JSON).
-- **Accessible, theme-aware UI.** Follows your VS Code theme (light, dark, high contrast) and is fully keyboard accessible: `Ctrl+Enter` sends, `Esc` stops, and **OWUI Agent: Add Selection to Chat** is bound to `Ctrl+Alt+K`.
+---
+
+## When to reach for OWUI Agent
+
+| Situation | What to try |
+|---|---|
+| Your code can't leave your network | Ask before edits (the default): "Add a /health endpoint that returns the version, with a test." |
+| You want a plan before anything changes | Plan mode: "How would you split `src/server.ts` into modules?", then switch modes to carry it out |
+| A change touches many files | Auto-accept, review at end: let it work, then keep or revert each file it changed |
+| You need to see the app running | The browser tool: "Start the dev server, open http://localhost:3000 and check the console for errors." |
+| You need an answer from the web | Web search through your SearXNG: approve or edit the query before it is sent |
+
+---
+
+## How it works
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/how-it-works-dark.svg">
+    <img src="assets/how-it-works-light.svg" width="900" alt="How OWUI Agent connects: the agent in VS Code sends every request through one egress guard, which allows only your Open WebUI server; Open WebUI serves your model and, if you enable it, web search through your SearXNG. Requests to any other host are refused. The optional browser tool opens only localhost pages in your own Chrome or Edge. Commands you approve run in your own shell, outside the guard.">
+  </picture>
+</p>
+
+Every request passes through [`src/net/egress.ts`](src/net/egress.ts), which refuses any origin other than your Open WebUI URL and any redirect away from it; a test fails if any other source file imports a network module. Diagnostics go to the **OWUI Agent** output channel without keys, prompts or file contents. The browser tool uses a throwaway profile and blocks every HTTP and WebSocket request to another host, including the browser's own background traffic to Google or Microsoft.
+
+> [!IMPORTANT]
+> What the extension cannot guarantee:
+>
+> - **The model's location.** It cannot tell whether a model in Open WebUI runs locally or is proxied to a cloud provider. Mark models that run on your own hardware as *local*; the header shows **Local** or **Unverified** accordingly.
+> - **Commands the agent runs.** Commands you approve, and allow-listed commands that run without asking, execute in your shell with your privileges and can reach the internet like any program you run (for example `npm install` or `git push`).
+> - **WebRTC.** UDP traffic from a page in the browser tool is not blocked yet.
+
+---
+
+## Documentation
+
+- **[Setup guide](docs/SETUP.md)**: [install](docs/SETUP.md#1-install-the-extension), [connect to Open WebUI](docs/SETUP.md#2-connect-to-open-webui), [choose and tune a model](docs/SETUP.md#3-choose-and-tune-a-model), [permissions and safety](docs/SETUP.md#4-permissions-and-safety)
+- **[Web search through SearXNG](docs/SETUP.md#5-optional-web-search-through-a-self-hosted-searxng)**: a Docker Compose file and the Open WebUI settings
+- **[The browser tool](docs/SETUP.md#6-the-local-browser-tool)** and **[where your data lives](docs/SETUP.md#7-where-your-data-lives)**
+- **[Changelog](CHANGELOG.md)** and **[releasing a new version](docs/RELEASING.md)**
+- **[Settings](#settings)**: every setting and its default
+
+---
+
+## Prerequisites
+
+| Requirement | Minimum | Check | Get it |
+|---|---|---|---|
+| VS Code | 1.96 | `code --version` | [code.visualstudio.com](https://code.visualstudio.com/) |
+| Open WebUI | a server you can reach, with API keys enabled | `curl http://localhost:3000/api/version` (your address) | [docs.openwebui.com](https://docs.openwebui.com) |
+| A model with tool calling | recent Qwen, Llama 3.1+, Mistral or similar; under ~7B parameters often struggles | it appears in the chat view's model picker | for example [Ollama](https://ollama.com), served through Open WebUI |
+| Chrome or Edge *(optional)* | any installed version | only for the browser tool | the extension never downloads a browser |
+
+---
 
 ## Limitations
 
@@ -157,6 +184,8 @@ Every request the extension makes passes through a single module, [`src/net/egre
 - **Command safety rules are a guardrail, not a sandbox.** The checks recognise common risky commands by their text. Review approvals carefully. Allow-listing a test or build runner (for example `npm test`) lets whatever the project defines as that script run without asking.
 - **Rewind covers the agent's file edits only.** Files that commands create, change or delete (installs, generators, formatters, `rm`), files over 20 MB, and databases or services are not rewound. Use Git for anything you need to get back.
 - **Platforms.** Tested on Windows 11. macOS and Linux are supported by the code and the CI workflow but have not been tested on real machines yet.
+
+---
 
 ## Development
 
@@ -188,7 +217,8 @@ Releases are published from version tags by CI; see [docs/RELEASING.md](docs/REL
 
 </details>
 
-## Repository map
+<details>
+<summary><b>Where things are in the repository</b></summary>
 
 | Path | What's there |
 |---|---|
@@ -204,16 +234,16 @@ Releases are published from version tags by CI; see [docs/RELEASING.md](docs/REL
 | [`docs/`](docs/) | the [setup guide](docs/SETUP.md), [release steps](docs/RELEASING.md), and the extension's page inside VS Code |
 | [`examples/skills/`](examples/skills/) | the example data-visualisation skill |
 | [`scripts/`](scripts/) | packaging, third-party notices, release notes, live checks and this README's art |
-| [`assets/`](assets/) | this README's images; [`scripts/readme-art.mjs`](scripts/readme-art.mjs) draws the banner and diagram |
+| [`assets/`](assets/) | this README's images; [`scripts/readme-art.mjs`](scripts/readme-art.mjs) draws the logo and diagram |
 
-## License
+</details>
 
-[MIT](LICENSE). The licenses of the bundled and shipped packages are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+---
 
 ## Settings
 
 <details>
-<summary><b>Every setting and its default</b></summary>
+<summary><b>Every setting and its default</b> (click to expand)</summary>
 
 | Setting | Default | Purpose |
 |---|---|---|
@@ -233,3 +263,9 @@ Releases are published from version tags by CI; see [docs/RELEASING.md](docs/REL
 | `owuiAgent.request.stallTimeoutSeconds` | `300` | Abort when a running response goes silent. |
 
 </details>
+
+---
+
+## License
+
+[MIT](LICENSE). The licenses of the bundled and shipped packages are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
