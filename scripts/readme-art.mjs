@@ -31,11 +31,20 @@ function logo(x, y, size, color) {
   </g>`;
 }
 
-/** The logo at the top of the README: the extension's icon and its name, on a transparent background. */
-function logoMark(t) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="752" height="200" viewBox="0 0 752 200" role="img" aria-label="OWUI Agent">
-  ${logo(28, 34, 132, t.accent)}
-  <text x="182" y="128" font-family="${SANS}" font-size="92" font-weight="700" letter-spacing="-3" fill="${t.fg}">OWUI Agent</text>
+/** The logo at the top of the README: the extension's icon and its name in white on a solid VS Code blue plate.
+ * One version for every theme: a light/dark pair follows the operating system's colour scheme, not GitHub's theme
+ * setting, so a transparent logo could show dark text on GitHub's dark page. */
+function logoMark() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="200" viewBox="0 0 760 200" role="img" aria-label="OWUI Agent">
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a84e0"/>
+      <stop offset="1" stop-color="#005fb8"/>
+    </linearGradient>
+  </defs>
+  <rect width="760" height="200" rx="36" fill="url(#plate)"/>
+  ${logo(40, 34, 132, '#ffffff')}
+  <text x="194" y="128" font-family="${SANS}" font-size="92" font-weight="700" letter-spacing="-3" fill="#ffffff">OWUI Agent</text>
 </svg>
 `;
 }
@@ -82,8 +91,8 @@ function diagram(t) {
 `;
 }
 
+fs.writeFileSync(path.join(OUT, 'logo.svg'), logoMark());
 for (const [name, t] of Object.entries(THEMES)) {
-  fs.writeFileSync(path.join(OUT, `logo-${name}.svg`), logoMark(t));
   fs.writeFileSync(path.join(OUT, `how-it-works-${name}.svg`), diagram(t));
 }
 console.log('wrote', fs.readdirSync(OUT).filter((f) => f.endsWith('.svg')).join(', '));

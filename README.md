@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-    <img src="assets/logo-light.svg" width="376" height="100" alt="OWUI Agent">
-  </picture>
+  <img src="assets/logo.svg" width="380" height="100" alt="OWUI Agent">
 </p>
 
 <p align="center">
