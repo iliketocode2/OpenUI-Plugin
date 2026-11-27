@@ -8,8 +8,15 @@ const MODEL = process.env.OWUI_MODEL ?? 'qwen3.6:27b';
 const KEY = process.env.OWUI_API_KEY;
 const CONTEXT = Number(process.env.OWUI_CONTEXT ?? 16384);
 const THINKING = process.env.OWUI_THINKING === '1';
-const TASK = process.env.OWUI_TASK === 'web' ? 'web' : process.env.OWUI_TASK === 'scaffold' ? 'scaffold' : 'code';
+const TASKS = ['code', 'scaffold', 'multistep', 'web'] as const;
+const TASK: (typeof TASKS)[number] = TASKS.find((t) => t === process.env.OWUI_TASK) ?? 'code';
 const PROMPTS = {
+  multistep:
+    'In a new folder notes-cli, build a small Node.js project without installing any packages: ' +
+    'package.json with "type": "module" and a test script "node --test"; src/notes.js exporting addNote(list, text), removeNote(list, index) and formatNotes(list), all without mutating their input; ' +
+    'src/cli.js that reads notes from notes.json, applies "add <text>", "remove <n>" or "list" from process.argv, and writes the file back; ' +
+    'and test/notes.test.js covering all three functions, including removing an index that does not exist. ' +
+    'Run npm test inside notes-cli, fix any failures, and finish with a short report.',
   code: 'Create a file hello.js that prints exactly "Hello, sovereign world", run it with node to verify the output, then give a two-line report of what you built and tested.',
   scaffold:
     'In a new folder clock, create a small static page that shows the current time: index.html, styles.css and clock.js, updating every second. ' +
@@ -68,7 +75,10 @@ async function main(): Promise<void> {
         ? cards.some((c) => c.tool === 'web_search' && c.status === 'done') && cards.some((c) => c.tool === 'web_fetch' && c.status === 'done') && /vitest\.dev/i.test(finalText)
         : TASK === 'scaffold'
           ? cards.some((c) => c.tool === 'run_command' && c.status === 'done' && /check\.js/.test(`${c.title}\n${c.input ?? ''}`))
-          : cards.some((c) => c.tool === 'run_command' && c.status === 'done' && /Hello, sovereign world/.test(c.output ?? ''));
+          : TASK === 'multistep'
+            ? // The last test run decides: a failure that the agent fixed and re-ran is fine.
+              cards.filter((c) => c.tool === 'run_command' && /npm (?:run )?test|node --test/.test(c.input ?? '')).at(-1)?.status === 'done'
+            : cards.some((c) => c.tool === 'run_command' && c.status === 'done' && /Hello, sovereign world/.test(c.output ?? ''));
     if (TASK === 'web') process.stdout.write(`approvals: ${h.approvalsSeen.map((a) => `${a.tool}(${a.approval?.editable?.value ?? ''})`).join(', ')}\n`);
     if (TASK === 'code') process.stdout.write(`\nhello.js: ${JSON.stringify(content.trim())}\n`);
     process.stdout.write(`final: ${JSON.stringify(final && 'text' in final ? final.text.trim().slice(0, 300) : '')}\n`);
@@ -76,6 +86,20 @@ async function main(): Promise<void> {
     process.stdout.write(`\n${ran ? 'PASS' : 'FAIL'}: ${cards.length} tool calls in ${Math.round((Date.now() - started) / 1000)}s; usage=${JSON.stringify(h.session.usage)}\n`);
     process.stdout.write(
       `metrics: ${modelTurns} model turns, ${outputTokens} output tokens, ${cards.length} tool calls (${cards.filter((c) => c.tool === 'todo_write').length} todo_write), ${Math.round((Date.now() - started) / 1000)}s\n`,
+    );
+    const batches = h.session.wireMessages().flatMap((m) => (m.role === 'assistant' && m.tool_calls?.length ? [m.tool_calls.length] : []));
+    process.stdout.write(
+      `metrics-json: ${JSON.stringify({
+        task: TASK,
+        pass: ran,
+        seconds: Math.round((Date.now() - started) / 1000),
+        modelTurns,
+        outputTokens,
+        toolCalls: cards.length,
+        todoWrite: cards.filter((c) => c.tool === 'todo_write').length,
+        failedTools: cards.filter((c) => c.status === 'error').length,
+        maxCallsPerTurn: Math.max(0, ...batches),
+      })}\n`,
     );
     process.exitCode = ran ? 0 : 1;
   } finally {

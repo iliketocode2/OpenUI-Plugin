@@ -30,7 +30,8 @@ interface WriteArgs {
 export const writeFileTool: Tool<WriteArgs> = {
   name: 'write_file',
   category: 'edit',
-  description: 'Create or completely overwrite a file, creating parent folders. Prefer edit_file for small changes.',
+  description:
+    'Create or completely overwrite a file, creating parent folders. Prefer edit_file for small changes. To create several files, call write_file for each of them in the same turn.',
   parameters: {
     type: 'object',
     properties: {
