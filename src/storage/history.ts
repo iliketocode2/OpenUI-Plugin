@@ -23,6 +23,7 @@ export interface SessionRecord {
   transcript: TranscriptItem[];
   wire: WireMessage[];
   todos: TodoItem[];
+  todosStale?: boolean;
   checkpoints: SerializedCheckpoint[];
   scratchpad?: string;
   turns?: [string, { wire: number; transcript: number }][];

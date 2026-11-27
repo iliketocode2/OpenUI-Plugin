@@ -556,6 +556,7 @@ export class AgentController implements vscode.Disposable {
       mode: this.mode,
       transcript: this.session.transcript,
       todos: this.session.todos,
+      ...(this.session.todosStale ? { todosStale: true } : {}),
       sovereignty: sovereignty(selected),
       noticeAcknowledged: this.deps.globalState.get<boolean>(STATE_NOTICE, false),
       web: this.currentWebStatus(),

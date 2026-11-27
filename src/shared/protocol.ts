@@ -159,6 +159,8 @@ export interface ViewState {
   mode: AgentMode;
   transcript: TranscriptItem[];
   todos: TodoItem[];
+  /** The agent finished without completing or updating the list. */
+  todosStale?: boolean;
   usage?: UsageView;
   sovereignty: SovereigntyLevel;
   noticeAcknowledged: boolean;

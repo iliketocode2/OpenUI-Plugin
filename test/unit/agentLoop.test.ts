@@ -261,6 +261,29 @@ describe('agent loop (native tool calls)', () => {
     expect(summaries[0]!.kind === 'summary' && summaries[0]!.unverified).toBe(true);
   });
 
+  it('marks a task list the agent left unfinished as stale, until it updates the list again', async () => {
+    const t = await harness({ mode: 'auto' });
+    mock.enqueue(
+      call('', { name: 'todo_write', arguments: { todos: [{ content: 'Write a', status: 'in_progress' }, { content: 'Check a', status: 'pending' }] } }),
+      say('Done.'),
+    );
+    await t.session.send('write a', t.ctx);
+    expect(t.session.todosStale).toBe(true);
+    const record = JSON.parse(JSON.stringify(t.session.toRecord('t', undefined, 'auto')));
+    expect(record.todosStale).toBe(true);
+    t.session.restore(record);
+    expect(t.session.todosStale).toBe(true);
+
+    // A run that finishes the list clears the flag; so does one that never touches a finished list.
+    mock.enqueue(call('', { name: 'todo_write', arguments: { update: [{ item: 1, status: 'completed' }, { item: 2, status: 'completed' }] } }), say('All done.'));
+    await t.session.send('finish it', t.ctx);
+    expect(t.session.todosStale).toBe(false);
+    expect(t.session.toRecord('t', undefined, 'auto').todosStale).toBeUndefined();
+    mock.enqueue(say('Hello.'));
+    await t.session.send('hi', t.ctx);
+    expect(t.session.todosStale).toBe(false);
+  });
+
   it('cancels a running command on stop and keeps the conversation consistent', async () => {
     const t = await harness({ mode: 'auto', allowlist: ['*'] });
     mock.enqueue(call('', { name: 'run_command', arguments: { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Hang', timeout_seconds: 60 } }));

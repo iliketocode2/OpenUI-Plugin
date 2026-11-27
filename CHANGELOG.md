@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A task list the agent leaves unfinished at the end of a run is collapsed, dimmed and labelled "not updated by the agent", so an abandoned list no longer looks like current progress (small models often create a list and never update it). It shows normally again while the agent runs, and is saved with the session.
+- A pause at the step limit shows as a notice with **Continue** rather than as a red error, and screen readers announce it as a pause, not an error.
+- `npm run smoke:agent` and `npm run bench:agent` use the extension's step limit (50, or `OWUI_MAX_ITERATIONS`) instead of the test harness's 20, which had cut off long benchmark runs.
 - Faster first replies on hybrid models such as Qwen 3.5 and 3.6, which can only resume from server checkpoints. The background warm-up pads its message so the server's checkpoint lands just before the end of the instructions; the first message then re-reads about 250 tokens instead of about 1,050 (measured on an integrated GPU: 1.2–1.5 s of prompt reading instead of 3.5 s; a first "hi" took 4 s end to end). Each new session is warmed up as well, because its first message needs the same checkpoint.
 - The session's scratchpad path is sent as a note with the first message (`[Session scratchpad: …]`, again after compaction or a restore) instead of in the instructions (system prompt v0.5), so the instructions and tool definitions are identical across sessions and the server can reuse its prompt cache for them.
 - `run_command` and `start_process` results name the folder the command ran in ("Exit code 1. Ran in clock."), and their descriptions explain that relative paths resolve against it, so a wrong working folder is visible instead of looking like a broken script.

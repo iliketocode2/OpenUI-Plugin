@@ -111,6 +111,8 @@ const MIN_SAMPLE_TOKENS = 500;
 export class AgentSession {
   readonly transcript: TranscriptItem[] = [];
   todos: TodoItem[] = [];
+  /** The last run ended with unfinished items that the agent did not update: the list may no longer be accurate. */
+  todosStale = false;
   usage: UsageView | undefined;
   private readonly wire: WireMessage[] = [];
   private controller: AbortController | undefined;
@@ -314,6 +316,7 @@ export class AgentSession {
       wire: this.wire,
       todos: this.todos,
       checkpoints: this.env.checkpoints.serialize(),
+      ...(this.todosStale ? { todosStale: true } : {}),
       scratchpad: this.env.scratchpad,
       turns: [...this.turnStarts],
     };
@@ -327,6 +330,7 @@ export class AgentSession {
     this.transcript.splice(0, this.transcript.length, ...record.transcript);
     this.wire.splice(0, this.wire.length, ...record.wire);
     this.todos = record.todos ?? [];
+    this.todosStale = record.todosStale ?? false;
     this.pendingNotes = [...(record.notes ?? [])];
     this.announcedMode = undefined;
     this.env.checkpoints.restore(record.checkpoints ?? []);
@@ -496,11 +500,13 @@ export class AgentSession {
     this.events.changed();
     this.runStats = { turns: 0, modelMs: 0, toolMs: 0, waitMs: 0 };
     const runStarted = Date.now();
+    // The agent is working on the list again; it only counts as stale if this run also leaves it unfinished.
+    this.todosStale = false;
     try {
       for (let iteration = 0; ; iteration++) {
         if (signal.aborted) break;
         if (iteration >= ctx.maxIterations) {
-          this.pushError(`Paused after ${ctx.maxIterations} steps. Continue if the agent is making progress, or give it new instructions.`, 'continue');
+          this.pushError(`Paused after ${ctx.maxIterations} steps so you can check on it. Continue lets the agent carry on, or send new instructions.`, 'continue');
           break;
         }
         const turn = await this.modelTurn(ctx, signal);
@@ -520,6 +526,7 @@ export class AgentSession {
         );
       }
       this.pushSummary();
+      if (this.todos.some((t) => t.status !== 'completed')) this.todosStale = true;
       if (ctx.mode() === 'review') this.pushReview();
       this.events.changed();
     }
@@ -873,6 +880,7 @@ export class AgentSession {
       web: this.env.web,
       setTodos: (todos) => {
         this.todos = todos;
+        this.todosStale = false;
         this.events.changed();
       },
       todos: () => this.todos,

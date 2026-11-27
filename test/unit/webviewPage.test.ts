@@ -232,6 +232,45 @@ describe('chat view page', () => {
     expect(await card.getByRole('button', { name: 'old.css' }).count()).toBe(0);
   });
 
+  it('shows a pause at the step limit as a status with Continue, and real errors as alerts', async () => {
+    await send({
+      type: 'state',
+      state: viewState([
+        { id: 'p', kind: 'error', ts: 1, text: 'Paused after 50 steps so you can check on it.', action: 'continue' },
+        { id: 'e', kind: 'error', ts: 2, text: 'Open WebUI rejected the request.', action: 'retry' },
+      ]),
+    });
+    const pause = page.locator('.banner-pause');
+    await pause.waitFor();
+    expect(await pause.getAttribute('role')).toBe('status');
+    expect(await pause.getAttribute('class')).toContain('banner-warn');
+    expect(await page.locator('.banner-error').getAttribute('role')).toBe('alert');
+    await pause.getByRole('button', { name: 'Continue' }).click();
+    expect(await posted('continue')).toHaveLength(1);
+  });
+
+  it('collapses and labels a task list the agent left unfinished', async () => {
+    const todos = [
+      { content: 'Write a', status: 'completed' as const },
+      { content: 'Check a', status: 'pending' as const },
+    ];
+    await send({ type: 'state', state: { ...viewState([]), todos } });
+    const panel = page.locator('details.todos');
+    await panel.waitFor();
+    expect(await panel.getAttribute('open')).not.toBeNull();
+    expect(await panel.locator('summary').textContent()).toBe('Tasks 1/2');
+
+    await send({ type: 'state', state: { ...viewState([]), todos, todosStale: true } });
+    await expect.poll(() => panel.locator('summary').textContent()).toBe('Tasks 1/2 · not updated by the agent');
+    expect(await panel.getAttribute('class')).toContain('todos-stale');
+    expect(await panel.getAttribute('open')).toBeNull();
+    expect(await panel.locator('summary').getAttribute('title')).toMatch(/may not match what was done/);
+
+    // While the agent runs again, the list is its current progress and is shown normally.
+    await send({ type: 'state', state: { ...viewState([], true), todos, todosStale: true } });
+    await expect.poll(() => panel.locator('summary').textContent()).toBe('Tasks 1/2');
+  });
+
   it('leaves focus in the composer when an approval arrives while the user types', async () => {
     await send({ type: 'state', state: viewState([], true) });
     await page.click('#prompt');

@@ -720,6 +720,15 @@ body.vscode-high-contrast .btn {
   overflow-y: auto;
 }
 
+.todos-stale {
+  opacity: 0.65;
+}
+
+.todos-stale-label {
+  font-weight: normal;
+  color: var(--vscode-descriptionForeground);
+}
+
 .todos summary {
   cursor: pointer;
   font-weight: 600;

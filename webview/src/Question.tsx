@@ -83,13 +83,15 @@ export function QuestionCard({ item }: { item: QuestionItem }) {
 
 const TODO_ICON: Record<TodoItem['status'], string> = { pending: '○', in_progress: '◐', completed: '●' };
 
-export function TodoPanel({ todos }: { todos: TodoItem[] }) {
+export function TodoPanel({ todos, stale }: { todos: TodoItem[]; stale: boolean }) {
   if (!todos.length) return null;
   const done = todos.filter((t) => t.status === 'completed').length;
   return (
-    <details class="todos" open>
-      <summary>
+    // Collapsed when stale: an abandoned list should not look like the agent's current progress.
+    <details class={`todos${stale ? ' todos-stale' : ''}`} open={!stale}>
+      <summary title={stale ? 'The agent finished without updating this list, so it may not match what was done. Check the run summary instead.' : undefined}>
         Tasks {done}/{todos.length}
+        {stale && <span class="todos-stale-label"> · not updated by the agent</span>}
       </summary>
       <ol>
         {todos.map((t, i) => (

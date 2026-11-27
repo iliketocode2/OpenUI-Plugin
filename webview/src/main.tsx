@@ -77,7 +77,7 @@ function App() {
     if (busy && !prevBusy.current) setAnnouncement('Agent is working.');
     if (!busy && prevBusy.current) {
       const last = state?.transcript[state.transcript.length - 1];
-      setAnnouncement(last?.kind === 'error' ? `Error: ${last.text}` : 'Agent finished.');
+      setAnnouncement(last?.kind === 'error' ? (last.action === 'continue' ? last.text : `Error: ${last.text}`) : 'Agent finished.');
     }
     prevBusy.current = busy;
   }, [busy, state]);
@@ -99,7 +99,7 @@ function App() {
       ) : (
         <Transcript items={state.transcript} busy={busy} planReady={planReady(state)} />
       )}
-      <TodoPanel todos={state.todos} />
+      <TodoPanel todos={state.todos} stale={!!state.todosStale && !busy} />
       <Composer busy={busy} disabled={!state.selectedModel} warming={state.warmUp?.status === 'warming'} mode={state.mode} inputRef={inputRef} insertRef={insertRef} />
       <div class="sr-only" role="status" aria-live="polite">
         {announcement}
@@ -372,7 +372,8 @@ function Item({ item, busy }: { item: TranscriptItem; busy: boolean }) {
       return <SummaryCard item={item} />;
     case 'error':
       return (
-        <div class="banner banner-error" role="alert">
+        // A pause at the step limit is a checkpoint for the user, not a failure.
+        <div class={`banner ${item.action === 'continue' ? 'banner-warn banner-pause' : 'banner-error'}`} role={item.action === 'continue' ? 'status' : 'alert'}>
           <p>{item.text}</p>
           {item.action && (
             <div class="actions">

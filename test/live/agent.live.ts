@@ -12,6 +12,8 @@ const TASKS = ['code', 'scaffold', 'multistep', 'todo', 'hi', 'web'] as const;
 const TASK: (typeof TASKS)[number] = TASKS.find((t) => t === process.env.OWUI_TASK) ?? 'code';
 /** OWUI_WARM=1 warms the model up first, as the extension does when it connects, and times it separately. */
 const WARM = process.env.OWUI_WARM === '1';
+/** The extension's default step limit (owuiAgent.agent.maxIterations), not the test harness's lower one. */
+const MAX_ITERATIONS = Number(process.env.OWUI_MAX_ITERATIONS ?? 50);
 const PROMPTS = {
   hi: 'hi',
   // A correctness check of the task list, not a speed benchmark: small models rarely start a list on their own.
@@ -36,7 +38,7 @@ async function main(): Promise<void> {
     process.stdout.write('OWUI_API_KEY is not set.\n');
     process.exit(2);
   }
-  const h = await createHarness({ baseUrl: BASE, apiKey: KEY, mode: 'auto', allowlist: ['node'], web: TASK === 'web', modelId: MODEL, stallMs: 300_000, firstResponseMs: 1_200_000, maxRetries: 1, override: { contextSize: CONTEXT, thinking: THINKING } });
+  const h = await createHarness({ baseUrl: BASE, apiKey: KEY, mode: 'auto', allowlist: ['node'], web: TASK === 'web', maxIterations: MAX_ITERATIONS, modelId: MODEL, stallMs: 300_000, firstResponseMs: 1_200_000, maxRetries: 1, override: { contextSize: CONTEXT, thinking: THINKING } });
   // The extension's own timing lines, for a summary that can be compared between prompt versions.
   let modelTurns = 0;
   let outputTokens = 0;
