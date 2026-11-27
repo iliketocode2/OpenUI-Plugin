@@ -34,7 +34,7 @@ import { coerceArgs, parseArguments, validateArgs } from '../tools/validate';
 import { realPath, type PathGuard } from '../workspace/paths';
 import { decide } from './permissions';
 import { buildRunSummary } from './runSummary';
-import { modeNote } from './systemPrompt';
+import { modeNote, scratchpadNote } from './systemPrompt';
 import { describeError, log } from '../log';
 import { formatDuration } from '../shared/format';
 
@@ -271,6 +271,9 @@ export class AgentSession {
    * conversation rather than the system prompt, so a change appends text instead of invalidating the cached prefix. */
   private withNotes(text: string, mode: AgentMode): string {
     const notes = mode === this.announcedMode ? [] : [modeNote(mode)];
+    // The mode is unannounced at the start of a session and whenever the model may no longer see earlier notes
+    // (after compaction, a rewind or a restore): the scratchpad note goes with it then.
+    if (this.announcedMode === undefined) notes.push(scratchpadNote(this.env.scratchpad));
     this.announcedMode = mode;
     notes.push(...this.pendingNotes);
     this.pendingNotes = [];
@@ -393,8 +396,11 @@ export class AgentSession {
     if (this.busy) return false;
     const { system, defs } = await this.prompt(ctx);
     const think = ctx.model.thinking;
+    const padded = resumesFromCheckpoints(ctx.model.id);
+    // Per session: a new session's first message diverges from the previous conversation where its own does, so the
+    // server needs a fresh checkpoint there (see warmUpMessage).
     const key = createHash('sha256')
-      .update(JSON.stringify([ctx.model.id, ctx.model.contextSize, think ?? null, system, defs]))
+      .update(JSON.stringify([this.id, ctx.model.id, ctx.model.contextSize, think ?? null, system, defs]))
       .digest('hex');
     if (opts.skip?.(key)) return false;
     const started = Date.now();
@@ -403,7 +409,7 @@ export class AgentSession {
         model: ctx.model.id,
         messages: [
           { role: 'system', content: system },
-          { role: 'user', content: 'Hi' },
+          { role: 'user', content: warmUpMessage(padded) },
         ],
         tools: defs,
         ...(think !== undefined ? { think } : {}),
@@ -988,4 +994,26 @@ function actionFor(e: unknown): 'setApiKey' | 'openSettings' | 'retry' {
 function generationRate(usage: Usage | null | undefined, generationMs: number): string {
   if (!usage?.completionTokens || generationMs <= 0) return '';
   return `, ${(usage.completionTokens / (generationMs / 1000)).toFixed(1)} tok/s`;
+}
+
+/** Tokens of padding in the warm-up message for models that resume from checkpoints (see warmUpMessage). */
+export const WARM_UP_PADDING = 800;
+
+/**
+ * Hybrid models (attention plus recurrent layers, such as Qwen 3.5) cannot rewind their state to any position: the
+ * server (llama-server in Ollama 0.40) resumes from checkpoints it saves 1024 tokens and 4 tokens before the end of
+ * each prompt. The first real message differs from the warm-up right after the instructions, so with a short warm-up
+ * message the only usable checkpoint is 1024 tokens back, and the first reply re-reads them (about 3.5 s on an
+ * integrated GPU, much longer on a CPU). Padding the warm-up message moves that checkpoint to just before the end of
+ * the instructions; measured: the first message re-reads 250 tokens instead of 1049. The padding stays well under
+ * 1024 tokens ("ok" is one token in common tokenizers), because a checkpoint past the divergence point is unusable.
+ * For other models it costs only the padding, read once in the background.
+ */
+export function warmUpMessage(padded: boolean): string {
+  return padded ? `ok${' ok'.repeat(WARM_UP_PADDING - 1)}` : 'Hi';
+}
+
+/** Model families known to use recurrent layers; matched on the model id, so unknown names fall back to no padding. */
+export function resumesFromCheckpoints(modelId: string): boolean {
+  return /qwen3\.[5-9]|qwen3-next|granite-?4|lfm2|falcon-?h1|nemotron-?h|jamba|mamba/i.test(modelId);
 }

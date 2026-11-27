@@ -661,7 +661,6 @@ export class AgentController implements vscode.Disposable {
     const shellPref = process.platform === 'win32' ? settings.windowsShell : settings.posixShell;
     const shell = this.deps.shells.pick(shellPref === 'auto' ? undefined : shellPref);
     const folder = vscode.workspace.workspaceFolders?.[0];
-    const scratchpad = this.session.scratchpad;
     return {
       model,
       systemPrompt: () =>
@@ -671,7 +670,6 @@ export class AgentController implements vscode.Disposable {
           shells: this.deps.shells.available().map((s) => `${s.label} (${s.id})`).join(', '),
           date: new Date().toISOString().slice(0, 10),
           workspace: folder ? folder.uri.fsPath : '(no folder open; work in the scratchpad)',
-          scratchpad,
         }, readSettings().webEnabled ? [WEB_PROMPT] : []),
       mode: () => this.mode,
       allowlist: () => readSettings().commandAllowlist,

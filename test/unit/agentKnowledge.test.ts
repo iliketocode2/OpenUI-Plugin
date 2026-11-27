@@ -91,7 +91,7 @@ describe('automatic compaction', () => {
     const summaryReq = body(before);
     expect(summaryReq.tools).toBeUndefined();
     expect(String(summaryReq.messages[0]!.content)).toMatch(/compress the history of a coding session/);
-    expect(String(summaryReq.messages[1]!.content)).toMatch(/USER:\n\[Permission mode: ask before acting[^\]]*\]\n\nquestion 0/);
+    expect(String(summaryReq.messages[1]!.content)).toMatch(/USER:\n\[Permission mode: ask before acting[^\]]*\]\n\[Session scratchpad: [^\]]+\]\n\nquestion 0/);
     const turn = body(before + 1);
     expect(String(turn.messages[1]!.content).startsWith(SUMMARY_PREFIX)).toBe(true);
     expect(String(turn.messages[1]!.content)).toContain('four answers given');

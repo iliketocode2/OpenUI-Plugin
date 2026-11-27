@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { WARM_UP_PADDING, resumesFromCheckpoints, warmUpMessage } from '../../src/agent/session';
 import { setLogger } from '../../src/log';
 import type { WireMessage } from '../../src/owui/types';
 import { createHarness, tools, type Harness, type HarnessOptions } from '../helpers/agent';
@@ -303,6 +304,29 @@ describe('agent loop (native tool calls)', () => {
     expect(t.session.transcript.filter((i) => i.kind === 'assistant')).toHaveLength(1);
   });
 
+  it('pads the warm-up for models that resume from checkpoints, and warms each session separately', async () => {
+    expect(resumesFromCheckpoints('qwen3.5:9b')).toBe(true);
+    expect(resumesFromCheckpoints('qwen3.6:27b')).toBe(true);
+    expect(resumesFromCheckpoints('qwen3.5-bench:latest')).toBe(true);
+    expect(resumesFromCheckpoints('qwen3:8b')).toBe(false);
+    expect(resumesFromCheckpoints('llama3.1:8b')).toBe(false);
+    expect(warmUpMessage(false)).toBe('Hi');
+    const padding = warmUpMessage(true);
+    expect(padding.split(' ')).toHaveLength(WARM_UP_PADDING);
+    expect(new Set(padding.split(' '))).toEqual(new Set(['ok']));
+
+    const t = await harness({ modelId: 'qwen3.5:9b' });
+    mock.enqueue(say('.'));
+    const keys: string[] = [];
+    await t.session.warmUp(t.ctx, { skip: (k) => (keys.push(k), false) });
+    expect((mock.chatRequests()[0]!.body as { messages: WireMessage[] }).messages[1]).toEqual({ role: 'user', content: padding });
+    await h?.cleanup();
+    const u = await harness({ modelId: 'qwen3.5:9b' });
+    await u.session.warmUp(u.ctx, { skip: (k) => (keys.push(k), true) });
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).not.toBe(keys[0]);
+  });
+
   it('times each tool and logs timings without arguments', async () => {
     const lines: string[] = [];
     setLogger({ info: (m) => lines.push(m), warn: (m) => lines.push(m), error: (m) => lines.push(m) });
@@ -325,6 +349,29 @@ describe('agent loop (native tool calls)', () => {
     } finally {
       setLogger(undefined);
     }
+  });
+
+  it('keeps the instructions identical across sessions and sends the scratchpad path once, as a note', async () => {
+    const a = await harness();
+    mock.enqueue(say('one'), say('two'));
+    await a.session.send('first', a.ctx);
+    await a.session.send('second', a.ctx);
+    const scratchA = a.session.scratchpad;
+    const workspaceA = a.workspace;
+    await h?.cleanup();
+    const b = await harness();
+    mock.enqueue(say('three'));
+    await b.session.send('first', b.ctx);
+    expect(b.session.scratchpad).not.toBe(scratchA);
+    const [a1, a2, b1] = [body(0), body(1), body(2)];
+    // Each test harness has its own workspace folder; real sessions in one window share it.
+    const system = (m: WireMessage, workspace: string) => String(m.content).replace(workspace, '<workspace>');
+    expect(system(b1.messages[0]!, b.workspace)).toBe(system(a1.messages[0]!, workspaceA));
+    expect(b1.tools).toEqual(a1.tools);
+    expect(String(a1.messages[0]!.content)).not.toContain(scratchA);
+    expect(String(a1.messages[1]!.content)).toContain(`[Session scratchpad: ${scratchA}]`);
+    expect(String(b1.messages[1]!.content)).toContain(`[Session scratchpad: ${b.session.scratchpad}]`);
+    expect(String(a2.messages.at(-1)!.content)).toBe('second');
   });
 
   it('sends params.think=false when thinking is turned off for the model', async () => {

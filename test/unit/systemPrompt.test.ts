@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MODE_TEXT, SYSTEM_PROMPT_VERSION, modeNote, renderSystemPrompt } from '../../src/agent/systemPrompt';
+import { MODE_TEXT, SYSTEM_PROMPT_VERSION, modeNote, renderSystemPrompt, scratchpadNote } from '../../src/agent/systemPrompt';
 
 const ctx = {
   os: 'Windows_NT 10 (win32)',
@@ -7,13 +7,12 @@ const ctx = {
   shells: 'Git Bash (gitbash), Windows PowerShell (powershell)',
   date: '2026-10-14',
   workspace: 'C:\\My Projects\\app',
-  scratchpad: 'C:\\Users\\me\\AppData\\scratch\\2026-10-14-abcd1234',
 };
 
 describe('renderSystemPrompt', () => {
   it('fills every placeholder, drops the version header and reports the version', () => {
     const out = renderSystemPrompt(ctx);
-    expect(SYSTEM_PROMPT_VERSION).toBe('0.4');
+    expect(SYSTEM_PROMPT_VERSION).toBe('0.5');
     expect(out).not.toContain('<!--');
     expect(out).not.toMatch(/\{\{\w+\}\}/);
     for (const v of Object.values(ctx)) expect(out).toContain(v);
@@ -57,5 +56,13 @@ describe('modeNote', () => {
       expect(modeNote(mode)).not.toContain('\n');
     }
     expect(modeNote('plan')).toMatch(/read-only/);
+  });
+});
+
+describe('scratchpadNote', () => {
+  it('names the session scratchpad in one bracketed line, which the instructions point to', () => {
+    expect(scratchpadNote('C:\\scratch\\2026-10-14-abcd1234')).toBe('[Session scratchpad: C:\\scratch\\2026-10-14-abcd1234]');
+    expect(renderSystemPrompt(ctx)).toContain('[Session scratchpad: …]');
+    expect(renderSystemPrompt(ctx)).not.toMatch(/\{\{scratchpad\}\}/);
   });
 });

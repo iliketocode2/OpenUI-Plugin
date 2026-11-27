@@ -301,6 +301,7 @@
     "package": "node scripts/package-vsix.mjs",
     "notices": "node scripts/third-party-notices.mjs",
     "smoke:agent": "node scripts/live-agent.mjs",
+    "bench:agent": "node scripts/bench-agent.mjs",
     "smoke:web": "esbuild test/live/web.live.ts --bundle --external:playwright-core --platform=node --format=cjs --outfile=out/live/web.live.js --log-level=warning && node out/live/web.live.js"
   },
   "dependencies": {

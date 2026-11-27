@@ -32,14 +32,16 @@ interface RunArgs {
 export const runCommandTool: Tool<RunArgs> = {
   name: 'run_command',
   category: 'command',
-  description: 'Run a command and wait for it to finish (builds, tests, linters, installs). No stdin: pass flags like --yes. For servers and watchers use start_process.',
+  description:
+    'Run a command and wait for it to finish (builds, tests, linters, installs). No stdin: pass flags like --yes. For servers and watchers use start_process. ' +
+    'It runs in the workspace root unless you set cwd, and relative paths in the command (and in scripts that use the current directory) resolve against that folder.',
   parameters: {
     type: 'object',
     properties: {
       command: { type: 'string' },
       description: { type: 'string', description: 'Five to ten words, shown to the user.' },
       shell: shellParam(),
-      cwd: { type: 'string', description: 'Defaults to the workspace root.' },
+      cwd: { type: 'string', description: 'Folder to run in. Defaults to the workspace root.' },
       timeout_seconds: { type: 'integer', minimum: 1, maximum: 3600 },
     },
     required: ['command', 'description'],
@@ -52,12 +54,17 @@ export const runCommandTool: Tool<RunArgs> = {
     return {
       access: { kind: 'command', command: args.command, cwd, background: false },
       card: { title: args.description || args.command, input: args.command },
-      execute: () => runCommand(args, shell, cwd.absolute, ctx),
+      execute: () => runCommand(args, shell, cwd.absolute, ranIn(cwd.display), ctx),
     };
   },
 };
 
-async function runCommand(args: RunArgs, shell: ShellSpec, cwd: string, ctx: ToolContext) {
+/** Named in every result, so the model can tell a wrong working folder from a broken script. */
+function ranIn(display: string): string {
+  return display === '.' ? 'the workspace root' : display;
+}
+
+async function runCommand(args: RunArgs, shell: ShellSpec, cwd: string, where: string, ctx: ToolContext) {
   const timeoutMs = Math.min(args.timeout_seconds ?? ctx.settings.commandTimeoutSeconds, 3600) * 1000;
   await mkdir(ctx.scratchpad, { recursive: true });
   const logPath = path.join(ctx.scratchpad, `cmd-${ctx.callId}.log`);
@@ -75,7 +82,7 @@ async function runCommand(args: RunArgs, shell: ShellSpec, cwd: string, ctx: Too
   ctx.update({ output: tail(t.text), exitCode: proc.exitCode ?? null });
   if (outcome === 'aborted' || ctx.signal.aborted) return fail(`Command cancelled by the user.\n${t.text}`);
   const timedOut = outcome === 'timeout';
-  const status = timedOut ? `Timed out after ${timeoutMs / 1000}s and was killed.` : `Exit code ${proc.exitCode}.`;
+  const status = `${timedOut ? `Timed out after ${timeoutMs / 1000}s and was killed.` : `Exit code ${proc.exitCode}.`} Ran in ${where}.`;
   const body = t.text ? `\n${t.text}` : '\n(no output)';
   const full = t.truncated ? `\n[Output truncated; the full output (${proc.output.length} characters) is in ${logPath}. Use read_file or grep on it.]` : '';
   const bg = proc.lingering && !timedOut
@@ -128,7 +135,7 @@ export const startProcessTool: Tool<StartArgs> = {
       command: { type: 'string' },
       description: { type: 'string', description: 'Five to ten words, shown to the user.' },
       shell: shellParam(),
-      cwd: { type: 'string' },
+      cwd: { type: 'string', description: 'Folder to run in. Defaults to the workspace root.' },
       wait_for: { type: 'string', description: 'Output regex, e.g. "ready|listening".' },
       wait_for_port: { type: 'integer', minimum: 1, maximum: 65535 },
       wait_seconds: { type: 'integer', minimum: 1, maximum: 600, description: 'Default 60.' },
@@ -165,9 +172,10 @@ export const startProcessTool: Tool<StartArgs> = {
         const out = truncateMiddle(proc.output.sinceLastRead(), ctx.settings.maxOutputChars);
         ctx.update({ output: out.text.slice(-DISPLAY_CHARS) });
         const exited = proc.exitCode !== undefined;
+        const where = `Started in ${ranIn(cwd.display)}.`;
         const head = exited
-          ? `Process ${proc.id} exited with code ${proc.exitCode}.`
-          : `Process ${proc.id} is running (${status === 'matched' ? 'output matched wait_for' : status === 'port' ? `port ${args.wait_for_port} is accepting connections` : status === 'timeout' ? 'still waiting: wait condition not met before timeout' : 'started'}).`;
+          ? `Process ${proc.id} exited with code ${proc.exitCode}. ${where}`
+          : `Process ${proc.id} is running (${status === 'matched' ? 'output matched wait_for' : status === 'port' ? `port ${args.wait_for_port} is accepting connections` : status === 'timeout' ? 'still waiting: wait condition not met before timeout' : 'started'}). ${where}`;
         return exited ? fail(`${head}\n${out.text}`) : ok(`${head}\nOutput so far:\n${out.text || '(none)'}`);
       },
     };

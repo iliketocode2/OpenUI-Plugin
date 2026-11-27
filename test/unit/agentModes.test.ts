@@ -162,7 +162,7 @@ describe('diffs and rewind', () => {
     t.session.restore(JSON.parse(JSON.stringify(t.session.toRecord('t', undefined, 'auto'))));
     mock.enqueue(say('ok'));
     await t.session.send('what now?', t.ctx);
-    expect(String(body(mock.chatRequests().length - 1).messages.at(-1)!.content)).toMatch(/^\[Permission mode: [^\]]*\]\n\[The user rewound the workspace files[^\]]*\]\n\nwhat now\?$/);
+    expect(String(body(mock.chatRequests().length - 1).messages.at(-1)!.content)).toMatch(/^\[Permission mode: [^\]]*\]\n\[Session scratchpad: [^\]]+\]\n\[The user rewound the workspace files[^\]]*\]\n\nwhat now\?$/);
   });
 });
 

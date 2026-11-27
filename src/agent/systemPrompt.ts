@@ -6,7 +6,6 @@ export interface PromptContext {
   shells: string;
   date: string;
   workspace: string;
-  scratchpad: string;
 }
 
 const HEADER = /^<!--\s*owui-agent system prompt v([\d.]+)\s*-->\s*\n/;
@@ -24,6 +23,12 @@ export const MODE_TEXT: Record<string, string> = {
 
 export function modeNote(mode: string): string {
   return `[Permission mode: ${MODE_TEXT[mode] ?? mode}]`;
+}
+
+/** The scratchpad differs per session, so it is sent as a note rather than in the instructions: that keeps the
+ * instructions and tool definitions byte-identical across sessions, and the server can reuse its prompt cache. */
+export function scratchpadNote(scratchpad: string): string {
+  return `[Session scratchpad: ${scratchpad}]`;
 }
 
 export function renderSystemPrompt(ctx: PromptContext, extraSections: string[] = []): string {

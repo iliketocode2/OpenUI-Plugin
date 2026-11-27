@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { processTool, runCommandTool, startProcessTool } from '../../src/tools/shell/tools';
@@ -81,7 +81,7 @@ describe('run_command behaviour', () => {
       ].join('\n'),
     );
     const r = await env.run(runCommandTool, { command: `${node} drip.js`, description: 'Write in pieces' });
-    expect(r.content).toBe(`Exit code 0.\n${Array.from({ length: 40 }, (_, i) => `línea ${i} ✓`).join('\n')}`);
+    expect(r.content).toBe(`Exit code 0. Ran in the workspace root.\n${Array.from({ length: 40 }, (_, i) => `línea ${i} ✓`).join('\n')}`);
     expect(env.processes.list()).toHaveLength(0);
   });
 
@@ -144,7 +144,17 @@ describe('background processes', () => {
   it('reports a process that exits immediately', async () => {
     const r = await env.run(startProcessTool, { command: `${node} -e "console.log('bye'); process.exit(2)"`, description: 'Exit early', wait_for: 'never' });
     expect(r.isError).toBe(true);
-    expect(r.content).toMatch(/exited with code 2/);
+    expect(r.content).toMatch(/exited with code 2\. Started in the workspace root\./);
+  });
+
+  it('names the folder a command ran in, so a wrong working folder is visible in the result', async () => {
+    await mkdir(path.join(env.workspace, 'clock'), { recursive: true });
+    const sub = await env.run(runCommandTool, { command: `${node} -e "process.exit(1)"`, description: 'Fail in a subfolder', cwd: 'clock' });
+    expect(sub.content.split('\n')[0]).toBe('Exit code 1. Ran in clock.');
+    const root = await env.run(runCommandTool, { command: `${node} -e ""`, description: 'Succeed at the root' });
+    expect(root.content.split('\n')[0]).toBe('Exit code 0. Ran in the workspace root.');
+    const bg = await env.run(startProcessTool, { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Idle', cwd: 'clock' });
+    expect(bg.content.split('\n')[0]).toMatch(/^Process p\d+ is running \(started\)\. Started in clock\.$/);
   });
 
   it('stopAll cleans up every running process', async () => {

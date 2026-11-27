@@ -60,6 +60,11 @@ In the chat panel, tick **Runs on infrastructure I control** for models that rea
 
 On CPU-only machines a 27B model may generate only a few tokens per second, so a single agent step can take minutes. Prefer a smaller model (7–14B) or a mixture-of-experts model, make sure Ollama uses your GPU (`ollama ps` shows the CPU/GPU split), and make sure the model plus its context fits in free RAM. If the first response is slow, raise `owuiAgent.request.firstResponseTimeoutSeconds` (default 1200).
 
+- **Integrated GPUs** (Intel Arc, AMD Radeon in laptops) are skipped by Ollama unless you set the environment variable `OLLAMA_IGPU_ENABLE=1`; its log then says `inference compute … library=Vulkan` instead of `dropping integrated GPU`. On an Intel Core Ultra laptop this took a 9B model from CPU-only to fully on the GPU.
+- **Keep the model loaded** with `OLLAMA_KEEP_ALIVE=30m` (the default is 5 minutes). Loading a model takes 15–70 s, and the extension's background warm-up only helps while the model stays loaded.
+- **Keep the context size modest.** The context size is memory reserved up front: 262144 tokens reserved 8 GiB for a 9B model and pushed the machine into swap. 16384–32768 is plenty for most tasks.
+- Set environment variables for your user account (on Windows: *Edit environment variables for your account*), then quit and restart Ollama from its tray icon.
+
 ## 4. Permissions and safety
 
 - **Modes** (bottom of the chat panel): *Plan* (read-only, produces a plan for approval), *Ask before edits* (default), *Auto-accept edits*, *Auto-accept, review at end*.
