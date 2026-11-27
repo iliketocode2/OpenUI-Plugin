@@ -81,6 +81,39 @@ describe('OWUI Agent plan mode, diffs and rewind (integration)', () => {
     }
   });
 
+  it('/plan plans a task read-only; Implement this plan returns to the earlier mode and carries it out', async () => {
+    await api.controller.setMode('auto');
+    mock.enqueue(say('Plan:\n1. Create `from-plan.txt`\n2. Verify it'));
+    await api.controller.send('/plan create from-plan.txt');
+    assert.equal(api.controller.mode, 'plan');
+    const first = mock.chatRequests()[0]!.body as { messages: { role: string; content: unknown }[] };
+    const userText = String(first.messages.at(-1)?.content);
+    assert.match(userText, /^\[Permission mode: plan \(read-only\)/);
+    assert.match(userText, /\n\ncreate from-plan\.txt$/);
+    assert.ok(!userText.includes('/plan'), 'the command itself is not sent to the model');
+    assert.equal(items('user').at(-1)?.text, 'create from-plan.txt');
+
+    mock.enqueue(call('', { name: 'write_file', arguments: { path: 'from-plan.txt', content: 'planned\n' } }), say('Done.'));
+    await api.provider['onMessage']({ type: 'implementPlan' });
+    assert.equal(api.controller.mode, 'auto');
+    assert.equal(await readFile(path.join(ws, 'from-plan.txt'), 'utf8'), 'planned\n');
+    const implement = mock.chatRequests()[1]!.body as { messages: { role: string; content: unknown }[] };
+    assert.match(String(implement.messages.at(-1)?.content), /^\[Permission mode: auto-accept edits[^\]]*\]\n\nImplement the plan above\.$/);
+
+    // Outside plan mode the button's message does nothing, and "/plan" alone only switches mode.
+    await api.provider['onMessage']({ type: 'implementPlan' });
+    assert.equal(mock.chatRequests().length, 3);
+    await api.controller.send('/plan');
+    assert.equal(api.controller.mode, 'plan');
+    assert.equal(mock.chatRequests().length, 3);
+    // A word that only starts with "plan" is an ordinary message.
+    mock.enqueue(say('ok'));
+    await api.controller.setMode('ask');
+    await api.controller.send('/planet facts');
+    assert.equal(api.controller.mode, 'ask');
+    assert.match(String((mock.chatRequests()[3]!.body as { messages: { content: unknown }[] }).messages.at(-1)?.content), /\/planet facts$/);
+  });
+
   it('opens the native diff editor for an edit', async () => {
     await api.controller.setMode('auto');
     await writeFile(path.join(ws, 'diffme.txt'), 'alpha\n');

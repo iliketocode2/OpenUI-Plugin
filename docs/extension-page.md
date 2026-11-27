@@ -23,7 +23,7 @@ What the extension cannot guarantee:
 - **Chat panel** with streaming Markdown, code highlighting, collapsible reasoning, timestamps and a context-usage meter.
 - **Agent loop** with tools to read, list, find and search files (ripgrep), write and edit files, run commands (Git Bash, PowerShell, cmd, bash, zsh), manage background processes (dev servers), view images, keep a task list, and ask you questions.
 - **Permission modes:**
-  - **Plan:** read-only. The agent investigates and asks questions, then replies with a plan. Switch to another mode when you want it implemented.
+  - **Plan:** read-only. The agent investigates and asks questions, then replies with a plan. `/plan <task>` switches to Plan mode and sends the task; **Implement this plan**, under the agent's answer, switches back to your earlier mode and asks the agent to carry the plan out.
   - **Ask before edits** (default): each change is shown as a diff to Apply or Deny.
   - **Auto-accept edits:** workspace changes apply immediately.
   - **Auto-accept, review at end:** changes apply immediately, then you keep or revert each file.
@@ -33,6 +33,7 @@ What the extension cannot guarantee:
 - **Checkpoints and rewind.** Before the agent first changes a file after each of your messages, the file's previous content is backed up in extension storage. Rewind code, conversation or both from any message: this undoes the agent's file edits (not changes made by shell commands), warns about files you changed after the agent did, and never deletes a file it could not back up. Any change can be opened in VS Code's diff view.
 - **Project memory.** `.owui/memory/MEMORY.md` plus topic files, loaded at the start of each session and kept up to date by the agent with your approval. A root `AGENTS.md` is loaded as project instructions.
 - **Skills.** Folders with a `SKILL.md`, in `.owui/skills/` or `~/.owui-agent/skills/`. The model sees their names and descriptions and loads one when it is relevant. Run **OWUI Agent: Install Example Skill** for a data-visualisation guide with a colour-palette validator.
+- **Run summary.** After each run that changed files or ran commands, a card lists the files the agent changed, each command with its exit code, warnings found in command output (failed commands, npm audit findings, deprecated packages) and whether anything ran after the last file change. The extension fills it in from what it recorded, so it stays accurate when a small model's own report is not. It is never sent to the model.
 - **Context management.** The context size (16k by default, or what you or Open WebUI set) is sent to Ollama as `num_ctx` with every request, so the model always runs with the size the extension plans for. Token usage is tracked per model. Prompts that would not fit are compacted automatically (old tool output first, then a model-written summary), or on demand with `/compact`. Truncation by the server is detected and reported.
 - **Fast on slow hardware.** The instructions and tool list stay byte-identical for the whole session (the task list, permission mode and memory updates go into the conversation instead), so Ollama can reuse its prompt cache instead of re-reading the conversation on every step.
 - **History.** Conversations are saved locally. Search, resume, rename, delete and export them (Markdown or JSON) from the History view.

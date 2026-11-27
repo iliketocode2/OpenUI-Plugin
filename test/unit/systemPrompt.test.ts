@@ -13,7 +13,7 @@ const ctx = {
 describe('renderSystemPrompt', () => {
   it('fills every placeholder, drops the version header and reports the version', () => {
     const out = renderSystemPrompt(ctx);
-    expect(SYSTEM_PROMPT_VERSION).toBe('0.3');
+    expect(SYSTEM_PROMPT_VERSION).toBe('0.4');
     expect(out).not.toContain('<!--');
     expect(out).not.toMatch(/\{\{\w+\}\}/);
     for (const v of Object.values(ctx)) expect(out).toContain(v);
@@ -29,6 +29,20 @@ describe('renderSystemPrompt', () => {
     expect(out).toMatch(/Never commit, push/);
     expect(out).toMatch(/scratchpad/i);
     expect(out).toMatch(/Do not start Docker/);
+  });
+
+  it('stops after a plan when the user asks for one in words', () => {
+    const out = renderSystemPrompt(ctx);
+    expect(out).toMatch(/asks you to go into planning mode, only read and search to investigate, then reply with a numbered plan/);
+    expect(out).toMatch(/Do not edit files or run commands until the user approves the plan/);
+  });
+
+  it('asks for fewer output tokens: batched calls, task list updates, brief narration, scaffolding commands', () => {
+    const out = renderSystemPrompt(ctx);
+    expect(out).toMatch(/do not depend on each other in the same turn/);
+    expect(out).toMatch(/todo_write: create it once, then mark progress with its `update` argument/);
+    expect(out).toMatch(/at most one short sentence/);
+    expect(out).toMatch(/official scaffolding command/);
   });
 
   it('appends extra sections', () => {

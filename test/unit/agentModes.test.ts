@@ -61,7 +61,7 @@ describe('plan mode', () => {
       expect(body(i).messages[0], `system message of request ${i}`).toEqual(body(0).messages[0]);
       expect(body(i).tools, `tools of request ${i}`).toEqual(body(0).tools);
     }
-    expect(String(body(1).messages.at(-1)!.content)).toContain('- [~] Write x');
+    expect(String(body(1).messages.at(-1)!.content)).toContain('1. [~] Write x');
     const goAhead = body(2).messages.find((m) => m.role === 'user' && String(m.content).includes('go ahead'));
     expect(String(goAhead?.content)).toMatch(/^\[Permission mode: auto-accept edits/);
     expect(body(3).messages.filter((m) => m.role === 'user' && String(m.content).startsWith('[Permission mode:'))).toHaveLength(2);

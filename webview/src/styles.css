@@ -111,6 +111,26 @@ body {
   color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow));
 }
 
+.warmup-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.warmup-clock {
+  font-variant-numeric: tabular-nums;
+}
+
+.spinner {
+  width: 0.8em;
+  height: 0.8em;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 .context {
   display: inline-flex;
   align-items: center;
@@ -499,7 +519,8 @@ body.vscode-high-contrast .btn {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .icon-running {
+  .icon-running,
+  .spinner {
     animation: none;
   }
 }
@@ -507,6 +528,21 @@ body.vscode-high-contrast .btn {
 .tool-exit {
   font-size: 0.85em;
   color: var(--vscode-errorForeground);
+}
+
+.plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+}
+
+.tool-time {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .chevron {
@@ -853,6 +889,76 @@ body.vscode-high-contrast .question {
 
 .action-modified {
   color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
+}
+
+.action-deleted {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-errorForeground));
+}
+
+.summary {
+  margin: 4px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, currentColor));
+  border-radius: 4px;
+}
+
+.summary-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.summary-title {
+  font-weight: 600;
+}
+
+.summary-label {
+  font-size: 0.9em;
+  font-weight: 600;
+  margin: 6px 0 2px;
+}
+
+.summary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.summary-file,
+.summary-command {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+  min-width: 0;
+}
+
+.summary-command code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.outcome-ok {
+  font-size: 0.85em;
+  white-space: nowrap;
+  color: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
+}
+
+.outcome-bad {
+  font-size: 0.85em;
+  white-space: nowrap;
+  color: var(--vscode-errorForeground);
+}
+
+.summary-warnings {
+  margin-top: 6px;
+  color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow));
+}
+
+.summary-note {
+  margin: 6px 0 0;
 }
 
 .review-buttons {

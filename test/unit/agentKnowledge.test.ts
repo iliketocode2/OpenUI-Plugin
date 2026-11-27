@@ -50,7 +50,7 @@ describe('memory and skills in the system prompt', () => {
     expect(system(0)).toContain('- dataviz: Charts with accessible palettes');
     expect(system(1)).toBe(system(0));
     expect(system(1)).not.toContain('Write schema');
-    expect(String(body(1).messages.at(-1)!.content)).toContain('- [~] Write schema');
+    expect(String(body(1).messages.at(-1)!.content)).toContain('1. [~] Write schema');
     expect(String(body(2).messages.at(-1)!.content)).toContain('Body');
   });
 
@@ -75,10 +75,12 @@ describe('memory and skills in the system prompt', () => {
 });
 
 describe('automatic compaction', () => {
+  // With 14000 tokens, four long answers fit and the fifth question needs compaction. The usable budget shrinks as the
+  // instructions and tool definitions grow, so this sits well above the size where compaction would start a turn early.
   const longAnswer = (i: number) => `Step ${i}: ${'lorem ipsum dolor sit amet '.repeat(220)}`;
 
   it('summarizes older turns before a request that would not fit, then continues', async () => {
-    const t = await harness({ override: { contextSize: 13000 } });
+    const t = await harness({ override: { contextSize: 14000 } });
     for (let i = 0; i < 4; i++) {
       mock.enqueue(say(longAnswer(i)));
       await t.session.send(`question ${i}`, t.ctx);
@@ -120,7 +122,7 @@ describe('automatic compaction', () => {
   });
 
   it('keeps the conversation unchanged when summarizing fails', async () => {
-    const t = await harness({ override: { contextSize: 13000 }, maxRetries: 0 });
+    const t = await harness({ override: { contextSize: 14000 }, maxRetries: 0 });
     for (let i = 0; i < 4; i++) {
       mock.enqueue(say(longAnswer(i)));
       await t.session.send(`question ${i}`, t.ctx);

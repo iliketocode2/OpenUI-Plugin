@@ -137,6 +137,101 @@ describe('chat view page', () => {
     expect((await posted('openLink')).map((m) => m.href)).toEqual(['https://example.com/']);
   });
 
+  it('shows how long slow tools ran and waited, and nothing for quick ones', async () => {
+    const tool = (id: string, extra: Partial<Extract<TranscriptItem, { kind: 'tool' }>>): TranscriptItem => ({ id, kind: 'tool', ts: 2, tool: 'run_command', title: id, status: 'done', ...extra });
+    await send({
+      type: 'state',
+      state: viewState([
+        tool('quick', { durationMs: 300, waitedMs: 200 }),
+        tool('slow', { durationMs: 41_200, waitedMs: 192_000 }),
+        tool('approved', { durationMs: 100, waitedMs: 5_000 }),
+      ]),
+    });
+    await page.waitForSelector('.tool-time');
+    const times = page.locator('.tool-time');
+    expect(await times.count()).toBe(2);
+    expect(await times.nth(0).innerText()).toBe('41.2s');
+    expect(await times.nth(0).getAttribute('aria-label')).toBe('Ran for 41.2s, waited 3m12s for your approval');
+    expect(await times.nth(1).innerText()).toBe('waited 5.0s');
+  });
+
+  it('shows a ticking warm-up chip and composer hint while the model loads, and a warning if it failed', async () => {
+    await send({ type: 'state', state: { ...viewState([]), warmUp: { status: 'warming', modelId: 'm', startedAt: Date.now() - 42_000 } } });
+    const chip = page.locator('.warmup');
+    await chip.waitFor();
+    expect(await chip.textContent()).toMatch(/Loading model… 0:4[23]/);
+    await expect.poll(async () => chip.textContent(), { timeout: 3000 }).toMatch(/0:4[4-5]/);
+    expect(await page.getAttribute('#prompt', 'placeholder')).toMatch(/model is loading/);
+    expect(await page.isEnabled('#prompt')).toBe(true);
+
+    await send({ type: 'state', state: { ...viewState([]), warmUp: { status: 'failed', modelId: 'm', startedAt: Date.now(), error: 'HTTP 503' } } });
+    await expect.poll(async () => chip.textContent()).toBe('Warm-up failed');
+    expect(await chip.getAttribute('title')).toContain('HTTP 503');
+    expect(await page.getAttribute('#prompt', 'placeholder')).toMatch(/^Ask anything/);
+
+    await send({ type: 'state', state: viewState([]) });
+    await expect.poll(async () => chip.count()).toBe(0);
+  });
+
+  it('offers Implement this plan only after a finished plan-mode answer', async () => {
+    const plan: TranscriptItem[] = [
+      { id: 'u', kind: 'user', text: 'plan it', ts: 1 },
+      { id: 'a', kind: 'assistant', text: '1. Do the thing', reasoning: '', ts: 2, streaming: false },
+    ];
+    const button = page.getByRole('button', { name: 'Implement this plan' });
+    await send({ type: 'state', state: { ...viewState(plan), mode: 'plan' } });
+    await button.waitFor();
+    await button.click();
+    expect(await posted('implementPlan')).toHaveLength(1);
+
+    await send({ type: 'state', state: { ...viewState(plan, true), mode: 'plan' } });
+    await expect.poll(() => button.count()).toBe(0);
+    await send({ type: 'state', state: viewState(plan) });
+    await page.waitForTimeout(100);
+    expect(await button.count()).toBe(0);
+    await send({ type: 'state', state: { ...viewState([...plan, { id: 'w', kind: 'warning', text: 'empty', ts: 3 }]), mode: 'plan' } });
+    await page.waitForTimeout(100);
+    expect(await button.count()).toBe(0);
+  });
+
+  it('shows the run summary: files to open, command outcomes, warnings and unchecked changes', async () => {
+    await send({
+      type: 'state',
+      state: viewState([
+        {
+          id: 's',
+          kind: 'summary',
+          ts: 3,
+          files: [
+            { absolute: '/ws/src/page.tsx', display: 'src/page.tsx', action: 'added' },
+            { absolute: '/ws/old.css', display: 'old.css', action: 'deleted' },
+          ],
+          commands: [
+            { command: 'npm run build', status: 'done', exitCode: 0, background: false },
+            { command: 'npm run lint', status: 'error', exitCode: 1, background: false },
+            { command: 'rm -rf dist', status: 'denied', background: false },
+          ],
+          warnings: ['npm audit reports 2 vulnerabilities (1 high, 1 critical).'],
+          unverified: true,
+        },
+      ]),
+    });
+    const card = page.getByRole('region', { name: 'Run summary' });
+    await card.waitFor();
+    const text = await card.innerText();
+    expect(text).toContain('2 files changed by the agent');
+    expect(text).toContain('3 commands');
+    expect(text).toContain('npm audit reports 2 vulnerabilities (1 high, 1 critical).');
+    expect(text).toContain('Nothing was run after the last file change');
+    expect(text).toContain('not written by the model');
+    expect(await card.locator('.outcome-ok').allInnerTexts()).toEqual(['exit 0']);
+    expect(await card.locator('.outcome-bad').allInnerTexts()).toEqual(['exit 1']);
+    expect(await card.locator('.summary-command .hint').allInnerTexts()).toEqual(['denied']);
+    await card.getByRole('button', { name: 'src/page.tsx' }).click();
+    expect(await posted('openFile')).toEqual([{ type: 'openFile', path: '/ws/src/page.tsx' }]);
+    expect(await card.getByRole('button', { name: 'old.css' }).count()).toBe(0);
+  });
+
   it('leaves focus in the composer when an approval arrives while the user types', async () => {
     await send({ type: 'state', state: viewState([], true) });
     await page.click('#prompt');
