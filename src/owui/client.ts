@@ -25,6 +25,11 @@ export interface RetryInfo {
 export interface ChatHandlers {
   onDelta?: (delta: StreamDelta) => void;
   onRetry?: (info: RetryInfo) => void;
+  /** Called once per attempt, when the first streamed event (or the whole non-streamed body) arrives. For a local
+   * model this marks the end of reading the prompt, including any model load. */
+  onFirstEvent?: () => void;
+  /** Overrides the configured retry count for this request. */
+  maxRetries?: number;
 }
 
 export class OwuiClient {
@@ -48,14 +53,19 @@ export class OwuiClient {
   }
 
   async chat(req: ChatRequest, handlers: ChatHandlers = {}, signal?: AbortSignal): Promise<AssistantTurn> {
-    const maxRetries = this.opts.maxRetries();
+    const maxRetries = handlers.maxRetries ?? this.opts.maxRetries();
     for (let attempt = 0; ; attempt++) {
       let emitted = false;
       try {
-        return await this.chatOnce(req, signal, (d) => {
-          emitted = true;
-          handlers.onDelta?.(d);
-        });
+        return await this.chatOnce(
+          req,
+          signal,
+          (d) => {
+            emitted = true;
+            handlers.onDelta?.(d);
+          },
+          handlers.onFirstEvent,
+        );
       } catch (e) {
         if (signal?.aborted) throw abortError();
         if (isAbortError(e)) throw e;
@@ -80,7 +90,12 @@ export class OwuiClient {
     }
   }
 
-  private async chatOnce(req: ChatRequest, signal: AbortSignal | undefined, onDelta: (d: StreamDelta) => void): Promise<AssistantTurn> {
+  private async chatOnce(
+    req: ChatRequest,
+    signal: AbortSignal | undefined,
+    onDelta: (d: StreamDelta) => void,
+    onFirstEvent: (() => void) | undefined,
+  ): Promise<AssistantTurn> {
     const controller = new AbortController();
     const onOuterAbort = () => controller.abort(abortError());
     if (signal?.aborted) throw abortError();
@@ -121,6 +136,7 @@ export class OwuiClient {
       if (!res.body) throw new Error('Open WebUI returned an empty response body.');
       if (!contentType.includes('text/event-stream')) {
         const text = await readAll(res.body, arm);
+        onFirstEvent?.();
         let json: unknown;
         try {
           json = JSON.parse(text);
@@ -140,7 +156,10 @@ export class OwuiClient {
         const r = await reader.read();
         if (r.done) break;
         const events = decoder.push(text.decode(r.value, { stream: true }));
-        if (events.length) receivedEvent = true;
+        if (events.length && !receivedEvent) {
+          receivedEvent = true;
+          onFirstEvent?.();
+        }
         arm();
         for (const ev of events) {
           if (this.handleEvent(ev.data, assembler, onDelta)) done = true;

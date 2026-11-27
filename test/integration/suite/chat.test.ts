@@ -172,6 +172,53 @@ describe('OWUI Agent chat (integration)', () => {
     assert.equal(api.controller.viewState().sovereignty, 'unverified');
   });
 
+  it('warms up a local model in the background, shows it in the view, and does not repeat it', async () => {
+    const until = async (cond: () => boolean, what: string) => {
+      for (let waited = 0; !cond(); waited += 20) {
+        if (waited > 5000) assert.fail(`timed out waiting for ${what}`);
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+    mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: '.' }), headersDelayMs: 400 });
+    try {
+      await api.controller.setModelLocal('chat-model', true);
+      await until(() => api.controller.viewState().warmUp?.status === 'warming', 'the warm-up to start');
+      assert.equal(api.controller.viewState().warmUp?.modelId, 'chat-model');
+      await until(() => api.controller.viewState().warmUp === undefined, 'the warm-up to finish');
+      const warm = mock.chatRequests();
+      assert.equal(warm.length, 1);
+      assert.equal((warm[0]!.body as { max_tokens: number }).max_tokens, 1);
+      api.controller.warmUp();
+      await new Promise((r) => setTimeout(r, 200));
+      assert.equal(mock.chatRequests().length, 1, 'the same prompt should not be warmed twice');
+      // A new session has its own scratchpad path in the instructions, so its prompt differs and is warmed again.
+      mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: '.' }) });
+      api.controller.newSession();
+      await until(() => mock.chatRequests().length === 2 && api.controller.viewState().warmUp === undefined, 'the new session to be warmed');
+    } finally {
+      await api.controller.setModelLocal('chat-model', false);
+    }
+  });
+
+  it('shows a failed warm-up without retrying it, and clears it when the model no longer qualifies', async () => {
+    const until = async (cond: () => boolean, what: string) => {
+      for (let waited = 0; !cond(); waited += 20) {
+        if (waited > 5000) assert.fail(`timed out waiting for ${what}`);
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+    mock.enqueue({ kind: 'json', status: 503, body: { detail: 'model is loading elsewhere' } });
+    try {
+      await api.controller.setModelLocal('chat-model', true);
+      await until(() => api.controller.viewState().warmUp?.status === 'failed', 'the warm-up to fail');
+      assert.equal(mock.chatRequests().length, 1, 'a failed warm-up is not retried');
+      assert.match(api.controller.viewState().warmUp?.error ?? '', /503/);
+    } finally {
+      await api.controller.setModelLocal('chat-model', false);
+    }
+    await until(() => api.controller.viewState().warmUp === undefined, 'the warning to clear');
+  });
+
   it('reconnects when the base URL changes, but not for settings that only change the view', async () => {
     const modelRequests = () => mock.requests.filter((r) => r.path === '/api/models').length;
     const before = modelRequests();

@@ -6,6 +6,7 @@ import { post, vscode } from './api';
 import { renderMarkdown } from './markdown';
 import { HistoryPanel } from './History';
 import { ReviewCard, RewindControl } from './Review';
+import { SummaryCard } from './Summary';
 import { QuestionCard, TodoPanel } from './Question';
 import { ToolCard } from './ToolCard';
 import { reducer } from './state';
@@ -96,10 +97,10 @@ function App() {
           onClose={closeHistory}
         />
       ) : (
-        <Transcript items={state.transcript} busy={busy} />
+        <Transcript items={state.transcript} busy={busy} planReady={planReady(state)} />
       )}
       <TodoPanel todos={state.todos} />
-      <Composer busy={busy} disabled={!state.selectedModel} mode={state.mode} inputRef={inputRef} insertRef={insertRef} />
+      <Composer busy={busy} disabled={!state.selectedModel} warming={state.warmUp?.status === 'warming'} mode={state.mode} inputRef={inputRef} insertRef={insertRef} />
       <div class="sr-only" role="status" aria-live="polite">
         {announcement}
       </div>
@@ -131,6 +132,7 @@ function Header({ state }: { state: ViewState }) {
         </select>
         <Sovereignty level={state.sovereignty} />
         <WebBadge web={state.web} />
+        {state.warmUp && <WarmUpChip warm={state.warmUp} model={selected?.name ?? state.warmUp.modelId} />}
       </div>
       {selected && (
         <div class="row meta">
@@ -188,6 +190,37 @@ function WebBadge({ web }: { web: ViewState['web'] }) {
   return (
     <span class={`badge ${l.ok ? 'badge-ok' : 'badge-warn'}`} title={[l.hint, web.detail].filter(Boolean).join(' ')}>
       {l.text(web.engine)}
+    </span>
+  );
+}
+
+function clock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function WarmUpChip({ warm, model }: { warm: NonNullable<ViewState['warmUp']>; model: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (warm.status !== 'warming') return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [warm.status, warm.startedAt]);
+  if (warm.status === 'failed') {
+    return (
+      <span class="badge badge-warn warmup" title={`Could not load ${model} in advance${warm.error ? `: ${warm.error}` : ''}. The first message may be slow.`}>
+        Warm-up failed
+      </span>
+    );
+  }
+  return (
+    <span
+      class="badge warmup warmup-active"
+      role="status"
+      title={`The server is loading ${model} and reading the agent's instructions, so the first reply does not have to wait for them. You can send a message now; it is answered when this finishes.`}
+    >
+      <span class="spinner" aria-hidden="true" />
+      Loading model… <span class="warmup-clock">{clock(now - warm.startedAt)}</span>
     </span>
   );
 }
@@ -266,7 +299,14 @@ function Connection({ state }: { state: ViewState }) {
   );
 }
 
-function Transcript({ items, busy }: { items: TranscriptItem[]; busy: boolean }) {
+/** A plan-mode run has ended with the agent's answer, which should be its plan. */
+function planReady(state: ViewState): boolean {
+  if (state.mode !== 'plan' || state.busy) return false;
+  const last = state.transcript[state.transcript.length - 1];
+  return last?.kind === 'assistant' && !last.streaming && !last.stopped && !!last.text.trim();
+}
+
+function Transcript({ items, busy, planReady }: { items: TranscriptItem[]; busy: boolean; planReady: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const onScroll = () => {
@@ -291,6 +331,14 @@ function Transcript({ items, busy }: { items: TranscriptItem[]; busy: boolean })
       {items.map((item) => (
         <Item key={item.id} item={item} busy={busy} />
       ))}
+      {planReady && (
+        <div class="plan-actions">
+          <button class="btn" onClick={() => post({ type: 'implementPlan' })} title="Switch back to the mode you used before planning and ask the agent to carry out this plan.">
+            Implement this plan
+          </button>
+          <span class="hint">or reply to change the plan</span>
+        </div>
+      )}
     </main>
   );
 }
@@ -320,6 +368,8 @@ function Item({ item, busy }: { item: TranscriptItem; busy: boolean }) {
       return <QuestionCard item={item} />;
     case 'review':
       return <ReviewCard item={item} />;
+    case 'summary':
+      return <SummaryCard item={item} />;
     case 'error':
       return (
         <div class="banner banner-error" role="alert">
@@ -403,12 +453,14 @@ const MODES: { id: AgentMode; label: string; hint: string }[] = [
 function Composer({
   busy,
   disabled,
+  warming,
   mode,
   inputRef,
   insertRef,
 }: {
   busy: boolean;
   disabled: boolean;
+  warming: boolean;
   mode: AgentMode;
   inputRef: RefObject<HTMLTextAreaElement>;
   insertRef: RefObject<(text: string) => void>;
@@ -447,7 +499,11 @@ function Composer({
         ref={inputRef}
         rows={3}
         value={text}
-        placeholder="Ask anything (Ctrl+Enter to send, /compact to shrink the context)"
+        placeholder={
+          warming
+            ? 'The model is loading. You can send now; the reply starts once it has loaded.'
+            : 'Ask anything (Ctrl+Enter to send, /plan to plan first, /compact to shrink the context)'
+        }
         onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
         onKeyDown={onKeyDown}
       />

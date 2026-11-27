@@ -32,6 +32,15 @@ afterEach(async () => {
 });
 
 describe('OwuiClient', () => {
+  it('reports the first streamed event once per attempt', async () => {
+    mock.enqueue({ kind: 'sse', chunks: sseChunks({ content: 'Hello there, friend' }) });
+    let first = 0;
+    const deltas: string[] = [];
+    await client().chat(req, { onFirstEvent: () => first++, onDelta: (d) => deltas.push(d.text) });
+    expect(first).toBe(1);
+    expect(deltas.join('')).toBe('Hello there, friend');
+  });
+
   it('lists models and reads the server version with bearer auth', async () => {
     const c = client();
     expect((await c.listModels()).map((m) => m.id)).toEqual(['mock-model']);

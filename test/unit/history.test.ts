@@ -109,6 +109,37 @@ describe('exports', () => {
     expect(md).toContain('````\ncontains ``` inside\n````');
   });
 
+  it('saves run summaries and exports them as facts recorded by the extension', async () => {
+    const r = record('s-summary', 'Build it', 10);
+    r.transcript.push({
+      id: 's',
+      kind: 'summary',
+      ts: 3,
+      files: [{ absolute: '/ws/a.ts', display: 'a.ts', action: 'added' }],
+      commands: [
+        { command: 'npm test', status: 'done', exitCode: 0, background: false },
+        { command: 'npm run dev', status: 'done', background: true },
+        { command: 'node hang.js', status: 'error', exitCode: null, background: false },
+      ],
+      warnings: ['npm audit reports 1 vulnerability (1 critical).'],
+      unverified: true,
+    });
+    await store.save(r);
+    expect((await store.load('s-summary'))!.transcript.at(-1)).toEqual(r.transcript.at(-1));
+    const md = toMarkdown(r);
+    expect(md).toContain(
+      [
+        '**Run summary** (recorded by the extension):',
+        '- added: a.ts',
+        '- ran `npm test`: exit 0',
+        '- ran `npm run dev`: started in the background',
+        '- ran `node hang.js`: timed out or killed',
+        '- warning: npm audit reports 1 vulnerability (1 critical).',
+        '- nothing was run after the last file change',
+      ].join('\n'),
+    );
+  });
+
   it('titles sessions from the first user message', () => {
     expect(titleFrom([])).toBe('Untitled session');
     expect(titleFrom([{ id: 'u', kind: 'user', text: `${'word '.repeat(30)}`, ts: 1 }]).length).toBe(70);

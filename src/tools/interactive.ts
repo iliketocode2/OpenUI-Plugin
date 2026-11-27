@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import type { AskUserQuestion, TodoItem } from '../shared/protocol';
-import { fail, ok, type Tool } from './types';
+import { fail, ok, type JsonSchema, type Tool } from './types';
 
 const MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -40,40 +40,71 @@ export const viewImageTool: Tool<{ path: string }> = {
   },
 };
 
-export const todoWriteTool: Tool<{ todos: TodoItem[] }> = {
+const TODO_STATUS: JsonSchema = { type: 'string', enum: ['pending', 'in_progress', 'completed'] };
+
+interface TodoUpdate {
+  item: number;
+  status: TodoItem['status'];
+}
+
+export const todoWriteTool: Tool<{ todos?: TodoItem[]; update?: TodoUpdate[] }> = {
   name: 'todo_write',
   category: 'interactive',
   description:
-    'Replace the task list shown to the user. For tasks with three or more steps: list all steps, keep one in_progress, mark each completed when done.',
+    'The task list shown to the user, for tasks with three or more steps. Create it with `todos` (every step, one in_progress). ' +
+    'After that, change statuses with `update` instead of resending the list, e.g. update: [{"item": 2, "status": "completed"}, {"item": 3, "status": "in_progress"}]. ' +
+    'Send it in the same turn as your next tool call rather than on its own.',
   parameters: {
     type: 'object',
     properties: {
       todos: {
         type: 'array',
         maxItems: 50,
+        description: 'The whole list: to create it, or when the steps themselves change.',
         items: {
           type: 'object',
-          properties: {
-            content: { type: 'string' },
-            status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] },
-          },
+          properties: { content: { type: 'string' }, status: TODO_STATUS },
           required: ['content', 'status'],
         },
       },
+      update: {
+        type: 'array',
+        maxItems: 50,
+        description: 'Status changes by item number, counting from 1.',
+        items: {
+          type: 'object',
+          properties: { item: { type: 'integer', minimum: 1 }, status: TODO_STATUS },
+          required: ['item', 'status'],
+        },
+      },
     },
-    required: ['todos'],
   },
   title: () => 'Update task list',
   async prepare(args, ctx) {
+    if (!args.todos === !args.update) {
+      return fail('Pass either `todos` (the whole list) or `update` (status changes by item number), not both or neither.');
+    }
+    let todos: TodoItem[];
+    if (args.todos) {
+      todos = args.todos;
+    } else {
+      const current = ctx.todos();
+      if (!current.length) return fail('There is no task list yet. Create it with `todos` first.');
+      const bad = args.update!.filter((u) => !Number.isInteger(u.item) || u.item < 1 || u.item > current.length).map((u) => u.item);
+      if (bad.length) return fail(`The task list has ${current.length} item(s); there is no item ${bad.join(', ')}. Items count from 1.`);
+      todos = current.map((t) => ({ ...t }));
+      for (const u of args.update!) todos[u.item - 1]!.status = u.status;
+    }
     return {
       access: { kind: 'none' },
       async execute() {
-        ctx.setTodos(args.todos);
-        const done = args.todos.filter((t) => t.status === 'completed').length;
-        ctx.update({ title: `Task list — ${done}/${args.todos.length} done` });
+        ctx.setTodos(todos);
+        const done = todos.filter((t) => t.status === 'completed').length;
+        ctx.update({ title: `Task list — ${done}/${todos.length} done` });
         // The list lives in the conversation rather than the system prompt, so changing it never invalidates the prompt cache.
+        // It is numbered so the model can refer to items in later updates.
         const mark = (s: TodoItem['status']) => (s === 'completed' ? 'x' : s === 'in_progress' ? '~' : ' ');
-        return ok(`Task list (${done}/${args.todos.length} done):\n${args.todos.map((t) => `- [${mark(t.status)}] ${t.content}`).join('\n')}`);
+        return ok(`Task list (${done}/${todos.length} done):\n${todos.map((t, i) => `${i + 1}. [${mark(t.status)}] ${t.content}`).join('\n')}`);
       },
     };
   },

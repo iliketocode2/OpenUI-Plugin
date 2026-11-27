@@ -101,6 +101,7 @@ An allow-listed command runs without asking only in its plain form. A redirectio
 | **Diffs and rewind** | Every change as a diff, openable in VS Code's diff view; rewind code, conversation or both from any of your messages, with a warning for files you changed after the agent did |
 | **Command safety** | Commands ask unless allow-listed; redirection, substitution, nested shells, environment prefixes and paths outside the workspace always ask |
 | **Project memory and skills** | `.owui/memory/MEMORY.md` and a root `AGENTS.md` load at the start of each session; skills are folders with a `SKILL.md` the model loads when relevant |
+| **Run summary** | after each run, a card the extension fills in from what it recorded, not from the model's report: files the agent changed, commands with their exit codes, warnings from command output (failed commands, npm audit findings, deprecated packages), and whether anything ran after the last file change |
 | **Context management** | `num_ctx` sent with every request; prompts that would not fit are compacted (old tool output first, then a model-written summary), or on demand with `/compact`; server-side truncation is detected and reported |
 | **Web search (opt-in)** | Through your Open WebUI server, ideally backed by your own SearXNG; you approve or edit every query and URL |
 | **Browser tool (opt-in)** | Opens your dev server in your installed Chrome or Edge to take screenshots, read the page and console errors, click and type, resize, and switch light/dark mode; only `localhost` pages |
@@ -111,7 +112,7 @@ Four **permission modes**, chosen at the bottom of the chat view:
 
 | Mode | File changes | Commands |
 |---|---|---|
-| **Plan** | none: read-only; the agent investigates, asks questions and replies with a plan | not available |
+| **Plan** | none: read-only; the agent investigates, asks questions and replies with a plan. Type `/plan <task>` to plan in this mode from any other; **Implement this plan** returns to your earlier mode and carries it out | not available |
 | **Ask before edits** (default) | each change shown as a diff to Apply or Deny | ask unless allow-listed |
 | **Auto-accept edits** | applied immediately | ask unless allow-listed |
 | **Auto-accept, review at end** | applied immediately, then you keep or revert each file | ask unless allow-listed |
@@ -126,7 +127,7 @@ Four **permission modes**, chosen at the bottom of the chat view:
 | Situation | What to try |
 |---|---|
 | Your code can't leave your network | Ask before edits (the default): "Add a /health endpoint that returns the version, with a test." |
-| You want a plan before anything changes | Plan mode: "How would you split `src/server.ts` into modules?", then switch modes to carry it out |
+| You want a plan before anything changes | `/plan How would you split src/server.ts into modules?`, then **Implement this plan** |
 | A change touches many files | Auto-accept, review at end: let it work, then keep or revert each file it changed |
 | You need to see the app running | The browser tool: "Start the dev server, open http://localhost:3000 and check the console for errors." |
 | You need an answer from the web | Web search through your SearXNG: approve or edit the query before it is sent |

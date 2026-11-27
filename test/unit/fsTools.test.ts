@@ -237,6 +237,32 @@ describe('interactive tools', () => {
     expect(env.todos.at(-1)).toHaveLength(2);
   });
 
+  it('todo_write updates statuses by item number without resending the list', async () => {
+    await env.run(todoWriteTool, { todos: [{ content: 'Scaffold', status: 'in_progress' }, { content: 'Build', status: 'pending' }, { content: 'Test', status: 'pending' }] });
+    const before = env.todos.at(-1)!;
+    const r = await env.run(todoWriteTool, { update: [{ item: 1, status: 'completed' }, { item: 2, status: 'in_progress' }] });
+    expect(r.isError).toBeFalsy();
+    expect(r.content).toBe('Task list (1/3 done):\n1. [x] Scaffold\n2. [~] Build\n3. [ ] Test');
+    expect(env.todos.at(-1)!.map((t) => t.status)).toEqual(['completed', 'in_progress', 'pending']);
+    expect(before.map((t) => t.status)).toEqual(['in_progress', 'pending', 'pending']);
+    expect(env.updates.at(-1)?.title).toBe('Task list — 1/3 done');
+  });
+
+  it('todo_write refuses an update without a list, out-of-range items, and ambiguous arguments', async () => {
+    const e = await createToolEnv();
+    try {
+      expect((await e.run(todoWriteTool, { update: [{ item: 1, status: 'completed' }] })).content).toMatch(/no task list yet/);
+      await e.run(todoWriteTool, { todos: [{ content: 'Only', status: 'pending' }] });
+      expect((await e.run(todoWriteTool, { update: [{ item: 2, status: 'completed' }] })).content).toMatch(/1 item\(s\); there is no item 2/);
+      expect((await e.run(todoWriteTool, { update: [{ item: 0, status: 'completed' }] })).isError).toBe(true);
+      expect((await e.run(todoWriteTool, {})).content).toMatch(/either `todos`/);
+      expect((await e.run(todoWriteTool, { todos: [], update: [] })).content).toMatch(/not both/);
+      expect(e.todos).toHaveLength(1);
+    } finally {
+      await e.cleanup();
+    }
+  });
+
   it('ask_user returns the answers', async () => {
     const e = await createToolEnv({ answers: () => [['Supabase'], ['GitHub', 'Slack']] });
     try {

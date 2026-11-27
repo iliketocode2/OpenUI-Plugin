@@ -22,7 +22,7 @@ import { resolveModel, type ResolvedModel, type ServerModel } from '../owui/mode
 import type { StreamDelta } from '../owui/streamAssembler';
 import { toolOutputChars } from '../owui/tokens';
 import type { Usage } from '../owui/types';
-import type { AgentMode, ApprovalDecision, ConnectionView, HistoryEntry, ModelView, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState, WebStatusView } from '../shared/protocol';
+import type { AgentMode, ApprovalDecision, ConnectionView, HistoryEntry, ModelView, RewindScope, SovereigntyLevel, ToolCardUpdate, ViewState, WarmUpView, WebStatusView } from '../shared/protocol';
 import { scratchRoot } from '../storage/scratchpad';
 import type { ToolRegistry } from '../tools/registry';
 import { ProcessManager } from '../tools/shell/processManager';
@@ -37,6 +37,10 @@ const WEB_PROMPT = webPrompt.replace(/^<!--[^\n]*-->\s*\n/, '').trim();
 const STATE_NOTICE = 'owuiAgent.sovereigntyNoticeAcknowledged';
 const STATE_MODEL = 'owuiAgent.selectedModel';
 const STATE_MODE = 'owuiAgent.mode';
+/** The mode to return to when the user implements a plan. */
+const STATE_MODE_BEFORE_PLAN = 'owuiAgent.modeBeforePlan';
+/** Sent by the Implement this plan button. */
+export const IMPLEMENT_PLAN_MESSAGE = 'Implement the plan above.';
 const STATE_WARNED = 'owuiAgent.warnedOnce';
 const STATE_TOTALS = 'owuiAgent.tokenTotals';
 /** Keys earlier versions wrote to global state: the permission mode (now per workspace), the models that used the
@@ -86,6 +90,11 @@ export class AgentController implements vscode.Disposable {
   private webStatus: WebStatusView = { enabled: false, verification: 'unverified' };
   private firstUnsavedChange = 0;
   private readonly deletedSessions = new Set<string>();
+  /** The prompt and model settings the server last warmed up for; see warmUp. */
+  private warmedKey: string | undefined;
+  private warmUpAbort: AbortController | undefined;
+  /** Shown in the view while a warm-up runs, or after one failed; undefined once the model is ready. */
+  private warmState: WarmUpView | undefined;
 
   constructor(private readonly deps: ControllerDeps) {
     this.connection = { baseUrl: '', insecure: false, hasKey: false, status: 'unknown' };
@@ -107,8 +116,16 @@ export class AgentController implements vscode.Disposable {
   }
 
   async setMode(mode: AgentMode): Promise<void> {
+    if (mode === 'plan' && this.mode !== 'plan') await this.deps.workspaceState.update(STATE_MODE_BEFORE_PLAN, this.mode);
     await this.deps.workspaceState.update(STATE_MODE, mode);
     this.emitState();
+  }
+
+  /** Leaves plan mode for the mode the user had before it, and asks the agent to carry out its plan. */
+  async implementPlan(): Promise<void> {
+    if (this.session.busy || this.mode !== 'plan') return;
+    await this.setMode(this.deps.workspaceState.get<AgentMode>(STATE_MODE_BEFORE_PLAN, 'ask'));
+    await this.send(IMPLEMENT_PLAN_MESSAGE);
   }
 
   async refresh(): Promise<void> {
@@ -142,6 +159,7 @@ export class AgentController implements vscode.Disposable {
       if (version) this.connection.serverVersion = version;
       this.ensureSelection();
       log.info(`Connected to Open WebUI ${version ?? '(unknown version)'} at ${conn.baseUrl}: ${models.length} model(s).`);
+      this.warmUp();
     } catch (e) {
       if (seq !== this.refreshSeq) return;
       this.connection = { ...conn, status: 'error', error: connectionMessage(e) };
@@ -160,6 +178,7 @@ export class AgentController implements vscode.Disposable {
     if (!this.serverModels.some((m) => m.id === id)) return;
     await this.deps.globalState.update(STATE_MODEL, id);
     this.emitState();
+    this.warmUp();
   }
 
   async setModelLocal(id: string, local: boolean): Promise<void> {
@@ -189,11 +208,13 @@ export class AgentController implements vscode.Disposable {
     if (value === undefined) return;
     await updateModelOverride(id, { contextSize: Number(value.replace(/[_,\s]/g, '')) });
     this.emitState();
+    this.warmUp();
   }
 
   async setModelThinking(id: string, thinking: boolean): Promise<void> {
     await updateModelOverride(id, { thinking });
     this.emitState();
+    this.warmUp();
   }
 
   async acknowledgeNotice(): Promise<void> {
@@ -212,6 +233,7 @@ export class AgentController implements vscode.Disposable {
     this.session = this.newAgentSession();
     this.titleOverride = undefined;
     this.emitState();
+    this.warmUp();
   }
 
   stop(): void {
@@ -273,8 +295,18 @@ export class AgentController implements vscode.Disposable {
       await this.compact();
       return;
     }
+    // "/plan <task>" plans the task in plan mode; "/plan" alone only switches to it.
+    const plan = /^\/plan(?:\s+([\s\S]*))?$/.exec(text.trim());
+    if (plan) {
+      if (this.session.busy) return;
+      await this.setMode('plan');
+      if (!plan[1]?.trim()) return;
+      text = plan[1].trim();
+    }
     const ctx = this.runContext();
     if (!ctx) return;
+    // A failed warm-up only matters until the user sends: the request either works or shows its own error.
+    if (this.warmState?.status === 'failed') this.warmState = undefined;
     await this.session.send(text, ctx);
   }
 
@@ -321,6 +353,7 @@ export class AgentController implements vscode.Disposable {
     this.titleOverride = record.title;
     this.dirty = false;
     this.emitState();
+    this.warmUp();
   }
 
   async renameSession(id: string): Promise<void> {
@@ -528,6 +561,8 @@ export class AgentController implements vscode.Disposable {
       web: this.currentWebStatus(),
     };
     if (selected) state.selectedModel = selected.id;
+    // Only for the selected model: after switching away, a warm-up still running for the old one is not this model's.
+    if (selected && this.warmState?.modelId === selected.id) state.warmUp = this.warmState;
     const usage = this.session.usage ?? (selected ? { promptTokens: 0, contextSize: selected.contextSize, contextSource: selected.contextSource, estimated: true } : undefined);
     if (usage) state.usage = usage;
     return state;
@@ -537,14 +572,81 @@ export class AgentController implements vscode.Disposable {
     this.listener?.state(this.viewState());
   }
 
+  /** Settings that do not need a reconnect can still change the prompt (tools, shells) or the model's num_ctx. */
+  settingsChanged(): void {
+    this.emitState();
+    this.warmUp();
+  }
+
+  /**
+   * Has the server load the selected model and read the agent's instructions and tools in the background, so the
+   * first message is answered without waiting for either. Only for models on the user's own server (served by Ollama,
+   * or marked local), where the request costs nothing; skipped while the agent runs, since a run warms the cache
+   * itself, and when the server is already warm for exactly this prompt and these model settings.
+   */
+  warmUp(): void {
+    if (this.connection.status !== 'ok' || this.session.busy) return;
+    const ctx = this.runContext({ quiet: true });
+    const server = ctx && this.serverModels.find((m) => m.id === ctx.model.id);
+    if (!ctx || (server?.ownedBy !== 'ollama' && !ctx.model.local)) {
+      this.cancelWarmUp();
+      return;
+    }
+    const abort = new AbortController();
+    const model = ctx.model;
+    let key: string | undefined;
+    this.session
+      .warmUp(ctx, {
+        signal: abort.signal,
+        skip: (k) => {
+          key = k;
+          // The same prompt is warm or warming already; leave that request running.
+          if (k === this.warmedKey) return true;
+          this.warmUpAbort?.abort();
+          this.warmUpAbort = abort;
+          this.warmedKey = k;
+          this.setWarmState({ status: 'warming', modelId: model.id, startedAt: Date.now() });
+          return false;
+        },
+      })
+      .then(() => {
+        if (this.warmUpAbort === abort) this.setWarmState(undefined);
+      })
+      .catch((e: unknown) => {
+        if (this.warmedKey === key) this.warmedKey = undefined;
+        // Aborted: either a newer warm-up replaced this one and owns the state, or the extension is shutting down.
+        if (abort.signal.aborted) return;
+        log.warn(`Could not warm up ${model.id}: ${describeError(e)}`);
+        if (this.warmUpAbort === abort) this.setWarmState({ status: 'failed', modelId: model.id, startedAt: Date.now(), error: e instanceof Error ? e.message : String(e) });
+      })
+      .finally(() => {
+        if (this.warmUpAbort === abort) this.warmUpAbort = undefined;
+      });
+  }
+
+  /** The selected model no longer qualifies (another model, or no longer local): stop waiting for the old warm-up. */
+  private cancelWarmUp(): void {
+    this.warmUpAbort?.abort();
+    this.warmUpAbort = undefined;
+    this.warmedKey = undefined;
+    if (this.warmState) this.setWarmState(undefined);
+  }
+
+  private setWarmState(state: WarmUpView | undefined): void {
+    this.warmState = state;
+    this.emitState();
+  }
+
   dispose(): void {
+    this.warmUpAbort?.abort();
     void this.flush();
     void this.session.dispose();
   }
 
-  private runContext(): RunContext | undefined {
+  private runContext(opts: { quiet?: boolean } = {}): RunContext | undefined {
     const model = this.selectedModel();
     if (!model) {
+      if (opts.quiet) return undefined;
       this.session.transcript.push({
         id: randomUUID(),
         kind: 'error',

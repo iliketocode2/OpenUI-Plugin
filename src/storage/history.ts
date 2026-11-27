@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { WireMessage } from '../owui/types';
+import { commandOutcome } from '../shared/format';
 import type { AgentMode, TodoItem, TranscriptItem } from '../shared/protocol';
 
 export interface SerializedCheckpoint {
@@ -234,6 +235,14 @@ export function toMarkdown(r: SessionRecord): string {
         break;
       case 'review':
         out.push('**Review:**', ...t.files.map((f) => `- ${f.display}: ${f.decision ?? 'pending'}`), '');
+        break;
+      case 'summary':
+        out.push('**Run summary** (recorded by the extension):');
+        for (const f of t.files) out.push(`- ${f.action}: ${f.display}`);
+        for (const c of t.commands) out.push(`- ran \`${c.command}\`: ${commandOutcome(c)}`);
+        for (const w of t.warnings) out.push(`- warning: ${w}`);
+        if (t.unverified) out.push('- nothing was run after the last file change');
+        out.push('');
         break;
       case 'error':
       case 'warning':

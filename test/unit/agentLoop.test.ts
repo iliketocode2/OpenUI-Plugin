@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { setLogger } from '../../src/log';
 import type { WireMessage } from '../../src/owui/types';
 import { createHarness, tools, type Harness, type HarnessOptions } from '../helpers/agent';
 import { MockOwui, sseChunks } from '../mock-owui/server';
@@ -189,6 +190,76 @@ describe('agent loop (native tool calls)', () => {
     expect(t.session.transcript.find((x) => x.kind === 'question')).toMatchObject({ status: 'answered', answers: [['Supabase']] });
   });
 
+  it('runs batched calls in one turn, with task list updates riding along with real work', async () => {
+    const t = await harness({ mode: 'auto' });
+    mock.enqueue(
+      call(
+        '',
+        { name: 'todo_write', arguments: { todos: [{ content: 'Write a', status: 'in_progress' }, { content: 'Write b', status: 'pending' }] }, id: 't1' },
+        { name: 'write_file', arguments: { path: 'a.txt', content: 'a' }, id: 'w1' },
+        { name: 'write_file', arguments: { path: 'b.txt', content: 'b' }, id: 'w2' },
+        { name: 'todo_write', arguments: { update: [{ item: 1, status: 'completed' }, { item: 2, status: 'completed' }] }, id: 't2' },
+      ),
+      say('Both files written.'),
+    );
+    await t.session.send('write a and b', t.ctx);
+    expect(mock.chatRequests()).toHaveLength(2);
+    expect(await readFile(path.join(t.workspace, 'a.txt'), 'utf8')).toBe('a');
+    expect(await readFile(path.join(t.workspace, 'b.txt'), 'utf8')).toBe('b');
+    expect(t.session.todos.map((x) => x.status)).toEqual(['completed', 'completed']);
+    const results = body(1).messages.filter((m) => m.role === 'tool');
+    expect(results.map((m) => m.tool_call_id)).toEqual(['t1', 'w1', 'w2', 't2']);
+    expect(String(results[3]!.content)).toBe('Task list (2/2 done):\n1. [x] Write a\n2. [x] Write b');
+  });
+
+  it('ends a run with a summary of files, commands and warnings that is never sent to the model', async () => {
+    const t = await harness({ mode: 'auto', allowlist: ['node'] });
+    await writeFile(path.join(t.workspace, 'old.txt'), 'old');
+    mock.enqueue(
+      call(
+        '',
+        { name: 'write_file', arguments: { path: 'new.txt', content: 'n' } },
+        { name: 'write_file', arguments: { path: 'old.txt', content: 'changed' } },
+      ),
+      call('', { name: 'run_command', arguments: { command: `${node} -e "console.log('2 vulnerabilities (1 high, 1 critical)')"`, description: 'Check' } }),
+      call('', { name: 'run_command', arguments: { command: `${node} -e "process.exit(3)"`, description: 'Fail' } }),
+      say('All done and fully tested.'),
+    );
+    await t.session.send('go', t.ctx);
+    const items = t.session.transcript;
+    const summary = items.at(-1)!;
+    expect(items.at(-2)).toMatchObject({ kind: 'assistant', text: 'All done and fully tested.' });
+    expect(summary.kind).toBe('summary');
+    if (summary.kind !== 'summary') return;
+    expect(summary.files.map((f) => [f.display, f.action])).toEqual([
+      ['new.txt', 'added'],
+      ['old.txt', 'modified'],
+    ]);
+    expect(summary.commands.map((c) => c.exitCode)).toEqual([0, 3]);
+    expect(summary.warnings).toEqual([expect.stringMatching(/failed \(exit 3\)/), 'npm audit reports 2 vulnerabilities (1 high, 1 critical).']);
+    expect(summary.unverified).toBe(false);
+    expect(JSON.stringify(t.session.wireMessages())).not.toContain('npm audit reports');
+
+    // The next request gets its own summary; a read-only one gets none.
+    mock.enqueue(call('', { name: 'read_file', arguments: { path: 'new.txt' } }), say('It says n.'));
+    await t.session.send('what is in new.txt?', t.ctx);
+    expect(t.session.transcript.filter((x) => x.kind === 'summary')).toHaveLength(1);
+    expect(t.session.transcript.at(-1)).toMatchObject({ kind: 'assistant' });
+  });
+
+  it('keeps one summary for a request that was paused and continued, and flags unchecked changes', async () => {
+    const t = await harness({ mode: 'auto', maxIterations: 1 });
+    mock.enqueue(call('', { name: 'write_file', arguments: { path: 'a.txt', content: 'a' } }));
+    await t.session.send('write a and b', t.ctx);
+    expect(t.session.transcript.filter((x) => x.kind === 'summary')).toHaveLength(1);
+    mock.enqueue(call('', { name: 'write_file', arguments: { path: 'b.txt', content: 'b' } }));
+    await t.session.resume(t.ctx);
+    const summaries = t.session.transcript.filter((x) => x.kind === 'summary');
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]!.kind === 'summary' && summaries[0]!.files.map((f) => f.display)).toEqual(['a.txt', 'b.txt']);
+    expect(summaries[0]!.kind === 'summary' && summaries[0]!.unverified).toBe(true);
+  });
+
   it('cancels a running command on stop and keeps the conversation consistent', async () => {
     const t = await harness({ mode: 'auto', allowlist: ['*'] });
     mock.enqueue(call('', { name: 'run_command', arguments: { command: `${node} -e "setInterval(() => {}, 1000)"`, description: 'Hang', timeout_seconds: 60 } }));
@@ -213,6 +284,47 @@ describe('agent loop (native tool calls)', () => {
     mock.enqueue(say('b'));
     await u.session.send('hi', u.ctx);
     expect(body(1).params).toEqual({ num_ctx: 24576 });
+  });
+
+  it('warms up with the same instructions, tools and model settings as the first real request', async () => {
+    const t = await harness({ override: { thinking: false, contextSize: 16384 } });
+    mock.enqueue(say('.'), say('hello'));
+    const keys: string[] = [];
+    expect(await t.session.warmUp(t.ctx, { skip: (k) => (keys.push(k), false) })).toBe(true);
+    expect(await t.session.warmUp(t.ctx, { skip: (k) => keys.includes(k) })).toBe(false);
+    expect(mock.chatRequests()).toHaveLength(1);
+    const warm = mock.chatRequests()[0]!.body as { messages: WireMessage[]; tools: unknown[]; params: unknown; max_tokens: number };
+    expect(warm.max_tokens).toBe(1);
+    await t.session.send('hi', t.ctx);
+    const real = body(1);
+    expect(warm.messages[0]).toEqual(real.messages[0]);
+    expect(warm.tools).toEqual(real.tools);
+    expect(warm.params).toEqual(real.params);
+    expect(t.session.transcript.filter((i) => i.kind === 'assistant')).toHaveLength(1);
+  });
+
+  it('times each tool and logs timings without arguments', async () => {
+    const lines: string[] = [];
+    setLogger({ info: (m) => lines.push(m), warn: (m) => lines.push(m), error: (m) => lines.push(m) });
+    try {
+      const t = await harness({ mode: 'ask' });
+      mock.enqueue(
+        call('', { name: 'run_command', arguments: { command: `${node} -e "setTimeout(() => {}, 300)"`, description: 'Wait a moment' } }),
+        say('done'),
+      );
+      await t.session.send('go', t.ctx);
+      const card = tools(t.session)[0]!;
+      expect(card.status).toBe('done');
+      expect(card.durationMs).toBeGreaterThanOrEqual(250);
+      expect(card.waitedMs).toBeGreaterThanOrEqual(0);
+      const toolLine = lines.find((l) => l.startsWith('Tool run_command:'));
+      expect(toolLine).toMatch(/^Tool run_command: done, ran \d+\.\ds, waited \d+\.\ds for approval, exit 0\.$/);
+      expect(lines.join('\n')).not.toContain('setTimeout');
+      expect(lines.filter((l) => /^mock-model: .*first response after \d+\.\ds/.test(l))).toHaveLength(2);
+      expect(lines.find((l) => l.startsWith('Run finished in'))).toMatch(/2 model turn\(s\) .*, tools .*, waiting for approval /);
+    } finally {
+      setLogger(undefined);
+    }
   });
 
   it('sends params.think=false when thinking is turned off for the model', async () => {

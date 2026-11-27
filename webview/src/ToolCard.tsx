@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ApprovalDecision, TranscriptItem } from '../../src/shared/protocol';
+import { formatDuration } from '../../src/shared/format';
 import { post, returnFocusToComposer } from './api';
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
@@ -40,6 +41,7 @@ export function ToolCard({ item }: { item: ToolItem }) {
         </span>
         <span class="tool-title">{item.title}</span>
         {item.exitCode !== undefined && item.exitCode !== null && item.exitCode !== 0 && <span class="tool-exit">exit {item.exitCode}</span>}
+        <Timing item={item} />
         {hasBody && <span class="chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>}
       </button>
       {open && hasBody && (
@@ -69,6 +71,24 @@ export function ToolCard({ item }: { item: ToolItem }) {
       )}
       {item.approval && item.status === 'awaiting-approval' && <Approval id={item.id} approval={item.approval} />}
     </div>
+  );
+}
+
+/** Shown once a tool has taken a noticeable time, so slow steps stand out without cluttering quick ones. */
+const SHOW_AFTER_MS = 1000;
+
+function Timing({ item }: { item: ToolItem }) {
+  const ran = item.durationMs ?? 0;
+  const waited = item.waitedMs ?? 0;
+  if (ran < SHOW_AFTER_MS && waited < SHOW_AFTER_MS) return null;
+  const parts = [];
+  if (item.durationMs !== undefined) parts.push(`Ran for ${formatDuration(ran)}`);
+  if (item.waitedMs !== undefined) parts.push(`waited ${formatDuration(waited)} for your approval`);
+  const label = parts.join(', ');
+  return (
+    <span class="tool-time" title={label} aria-label={label}>
+      {ran >= SHOW_AFTER_MS ? formatDuration(ran) : `waited ${formatDuration(waited)}`}
+    </span>
   );
 }
 

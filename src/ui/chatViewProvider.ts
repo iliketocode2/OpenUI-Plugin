@@ -132,6 +132,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       case 'setMode':
         await this.controller.setMode(m.mode);
         return;
+      case 'implementPlan':
+        await this.controller.implementPlan();
+        return;
       case 'setApiKey':
         await this.commands.setApiKey();
         return;

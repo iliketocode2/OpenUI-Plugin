@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
+import { setLogger } from '../../src/log';
 import { createHarness, tools } from '../helpers/agent';
 
 const BASE = (process.env.OWUI_BASE_URL ?? 'http://localhost:8090').replace(/\/+$/, '');
@@ -7,9 +8,12 @@ const MODEL = process.env.OWUI_MODEL ?? 'qwen3.6:27b';
 const KEY = process.env.OWUI_API_KEY;
 const CONTEXT = Number(process.env.OWUI_CONTEXT ?? 16384);
 const THINKING = process.env.OWUI_THINKING === '1';
-const TASK = process.env.OWUI_TASK === 'web' ? 'web' : 'code';
+const TASK = process.env.OWUI_TASK === 'web' ? 'web' : process.env.OWUI_TASK === 'scaffold' ? 'scaffold' : 'code';
 const PROMPTS = {
   code: 'Create a file hello.js that prints exactly "Hello, sovereign world", run it with node to verify the output, then give a two-line report of what you built and tested.',
+  scaffold:
+    'In a new folder clock, create a small static page that shows the current time: index.html, styles.css and clock.js, updating every second. ' +
+    'Then write clock/check.js, a node script that exits with code 1 unless all three files exist and index.html links styles.css and clock.js. Run it with node to verify, then report briefly.',
   web: 'Use web_search to find the official Vitest documentation page about mocking modules, then use web_fetch to read it. Answer in two sentences: how does vi.mock handle being written below the imports? Cite the URL you read.',
 };
 
@@ -19,6 +23,23 @@ async function main(): Promise<void> {
     process.exit(2);
   }
   const h = await createHarness({ baseUrl: BASE, apiKey: KEY, mode: 'auto', allowlist: ['node'], web: TASK === 'web', modelId: MODEL, stallMs: 300_000, firstResponseMs: 1_200_000, maxRetries: 1, override: { contextSize: CONTEXT, thinking: THINKING } });
+  // The extension's own timing lines, for a summary that can be compared between prompt versions.
+  let modelTurns = 0;
+  let outputTokens = 0;
+  setLogger({
+    info: (m) => {
+      const turn = /, \d+ prompt \+ (\d+) output tokens, \d+ tool call/.exec(m);
+      if (turn) {
+        modelTurns++;
+        outputTokens += Number(turn[1]);
+      } else if (/~\d+ prompt tokens \(estimated\), \d+ tool call/.test(m)) {
+        modelTurns++;
+      }
+      if (process.env.OWUI_VERBOSE) process.stdout.write(`  log: ${m}\n`);
+    },
+    warn: (m) => process.stdout.write(`  warn: ${m}\n`),
+    error: (m) => process.stdout.write(`  error: ${m}\n`),
+  });
   const started = Date.now();
   let last = 0;
   const timer = setInterval(() => {
@@ -45,15 +66,21 @@ async function main(): Promise<void> {
     const ran =
       TASK === 'web'
         ? cards.some((c) => c.tool === 'web_search' && c.status === 'done') && cards.some((c) => c.tool === 'web_fetch' && c.status === 'done') && /vitest\.dev/i.test(finalText)
-        : cards.some((c) => c.tool === 'run_command' && c.status === 'done' && /Hello, sovereign world/.test(c.output ?? ''));
+        : TASK === 'scaffold'
+          ? cards.some((c) => c.tool === 'run_command' && c.status === 'done' && /check\.js/.test(`${c.title}\n${c.input ?? ''}`))
+          : cards.some((c) => c.tool === 'run_command' && c.status === 'done' && /Hello, sovereign world/.test(c.output ?? ''));
     if (TASK === 'web') process.stdout.write(`approvals: ${h.approvalsSeen.map((a) => `${a.tool}(${a.approval?.editable?.value ?? ''})`).join(', ')}\n`);
     if (TASK === 'code') process.stdout.write(`\nhello.js: ${JSON.stringify(content.trim())}\n`);
     process.stdout.write(`final: ${JSON.stringify(final && 'text' in final ? final.text.trim().slice(0, 300) : '')}\n`);
     if (errors.length) process.stdout.write(`notices:\n${errors.map((e) => `  - ${e}`).join('\n')}\n`);
     process.stdout.write(`\n${ran ? 'PASS' : 'FAIL'}: ${cards.length} tool calls in ${Math.round((Date.now() - started) / 1000)}s; usage=${JSON.stringify(h.session.usage)}\n`);
+    process.stdout.write(
+      `metrics: ${modelTurns} model turns, ${outputTokens} output tokens, ${cards.length} tool calls (${cards.filter((c) => c.tool === 'todo_write').length} todo_write), ${Math.round((Date.now() - started) / 1000)}s\n`,
+    );
     process.exitCode = ran ? 0 : 1;
   } finally {
     clearInterval(timer);
+    setLogger(undefined);
     await h.cleanup();
   }
 }

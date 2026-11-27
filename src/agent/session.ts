@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import type { OwuiClient, RetryInfo } from '../owui/client';
 import { HttpError, MissingApiKeyError, isAbortError } from '../owui/errors';
 import type { ResolvedModel } from '../owui/models';
@@ -32,8 +33,10 @@ import { isPrepared, type ImageAttachment, type Tool, type ToolContext, type Too
 import { coerceArgs, parseArguments, validateArgs } from '../tools/validate';
 import { realPath, type PathGuard } from '../workspace/paths';
 import { decide } from './permissions';
+import { buildRunSummary } from './runSummary';
 import { modeNote } from './systemPrompt';
 import { describeError, log } from '../log';
+import { formatDuration } from '../shared/format';
 
 type AssistantItem = Extract<TranscriptItem, { kind: 'assistant' }>;
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
@@ -115,6 +118,8 @@ export class AgentSession {
   private readonly questions = new Map<string, (answers: string[][] | undefined) => void>();
   private readonly turnStarts = new Map<string, { wire: number; transcript: number }>();
   private runCheckpoint: string | undefined;
+  /** Where the user's latest request starts in the transcript; a Continue belongs to the same request. */
+  private requestStart = 0;
   private contextSections: string[] = [];
   private skills: Skill[] = [];
   private contextLoaded = false;
@@ -129,6 +134,8 @@ export class AgentSession {
   created: number = Date.now();
   private lastCallKey = '';
   private repeatCount = 0;
+  /** Where the time of the current run went, for one log line when it ends. */
+  private runStats = { turns: 0, modelMs: 0, toolMs: 0, waitMs: 0 };
 
   constructor(
     private readonly env: AgentEnv,
@@ -241,6 +248,7 @@ export class AgentSession {
     const id = randomUUID();
     this.turnStarts.set(id, { wire: this.wire.length, transcript: this.transcript.length });
     const user: Extract<TranscriptItem, { kind: 'user' }> = { id, kind: 'user', text: trimmed, ts: Date.now() };
+    this.requestStart = this.transcript.length;
     this.transcript.push(user);
     this.controller = new AbortController();
     this.events.changed();
@@ -374,6 +382,42 @@ export class AgentSession {
     return this.frozen;
   }
 
+  /**
+   * Loads the model and has the server read the instructions and tool definitions before the user sends anything, so
+   * the first reply waits for neither (on CPU, about a minute each). The request matches the real ones up to the end
+   * of the system message and sends the same num_ctx and think values, so Ollama keeps the model loaded and reuses
+   * the cached prefix. `skip` sees a key for the prompt and model settings and returns true to skip the request
+   * (for example when that exact prompt was warmed already). Returns whether a request was sent.
+   */
+  async warmUp(ctx: RunContext, opts: { skip?: (key: string) => boolean; signal?: AbortSignal } = {}): Promise<boolean> {
+    if (this.busy) return false;
+    const { system, defs } = await this.prompt(ctx);
+    const think = ctx.model.thinking;
+    const key = createHash('sha256')
+      .update(JSON.stringify([ctx.model.id, ctx.model.contextSize, think ?? null, system, defs]))
+      .digest('hex');
+    if (opts.skip?.(key)) return false;
+    const started = Date.now();
+    await this.env.client.chat(
+      {
+        model: ctx.model.id,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: 'Hi' },
+        ],
+        tools: defs,
+        ...(think !== undefined ? { think } : {}),
+        numCtx: ctx.model.contextSize,
+        maxTokens: 1,
+      },
+      // A failed warm-up costs nothing but a slower first reply, so it is not worth retrying.
+      { maxRetries: 0 },
+      opts.signal,
+    );
+    log.info(`${ctx.model.id}: warmed up in ${((Date.now() - started) / 1000).toFixed(1)}s (model loaded, instructions and tools cached).`);
+    return true;
+  }
+
   private async maybeCompact(ctx: RunContext, signal: AbortSignal, force = false): Promise<void> {
     const { system, defs } = await this.prompt(ctx);
     // The budget is what the conversation may use: the context minus room for the answer, instructions and tools.
@@ -444,6 +488,8 @@ export class AgentSession {
     this.controller ??= new AbortController();
     const signal = this.controller.signal;
     this.events.changed();
+    this.runStats = { turns: 0, modelMs: 0, toolMs: 0, waitMs: 0 };
+    const runStarted = Date.now();
     try {
       for (let iteration = 0; ; iteration++) {
         if (signal.aborted) break;
@@ -460,9 +506,36 @@ export class AgentSession {
       for (const resolve of this.approvals.values()) resolve({ decision: 'deny' });
       for (const resolve of this.questions.values()) resolve(undefined);
       this.controller = undefined;
+      const st = this.runStats;
+      if (st.turns) {
+        log.info(
+          `Run finished in ${formatDuration(Date.now() - runStarted)}: ${st.turns} model turn(s) ${formatDuration(st.modelMs)}, ` +
+            `tools ${formatDuration(st.toolMs)}, waiting for approval ${formatDuration(st.waitMs)}.`,
+        );
+      }
+      this.pushSummary();
       if (ctx.mode() === 'review') this.pushReview();
       this.events.changed();
     }
+  }
+
+  /** Adds the facts of the request so far (files, commands, warnings) after the agent's own report. A request that was
+   * continued keeps one summary: the newest replaces the earlier one. */
+  private pushSummary(): void {
+    const cpId = this.runCheckpoint;
+    if (!cpId) return;
+    const request = this.transcript.slice(this.requestStart);
+    const cards = request.filter((t): t is ToolItem => t.kind === 'tool');
+    const files = this.env.checkpoints.agentChangesSince(cpId).flatMap((c) => {
+      const exists = existsSync(c.absolute);
+      // No backup means the file did not exist before; created and then deleted again is no change.
+      if (c.action === 'delete' && !exists) return [];
+      const action = c.action === 'delete' ? ('added' as const) : exists ? ('modified' as const) : ('deleted' as const);
+      return [{ absolute: c.absolute, display: this.env.paths.classify(c.absolute).display, action }];
+    });
+    const summary = buildRunSummary(cards, files);
+    for (const old of request.filter((t) => t.kind === 'summary')) this.removeItem(old);
+    if (summary) this.transcript.push({ id: randomUUID(), kind: 'summary', ts: Date.now(), ...summary });
   }
 
   private pushReview(): void {
@@ -518,6 +591,7 @@ export class AgentSession {
 
     let turn: AssistantTurn;
     const started = Date.now();
+    let firstAt: number | undefined;
     try {
       turn = await this.env.client.chat(
         {
@@ -542,11 +616,19 @@ export class AgentSession {
             item.text += d.text;
             this.events.delta(item.id, d);
           },
-          onRetry: (info) => this.onRetry(item, info),
+          onRetry: (info) => {
+            firstAt = undefined;
+            this.onRetry(item, info);
+          },
+          onFirstEvent: () => {
+            firstAt = Date.now();
+          },
         },
         signal,
       );
     } catch (e) {
+      this.runStats.turns++;
+      this.runStats.modelMs += Date.now() - started;
       item.streaming = false;
       if (isAbortError(e) || signal.aborted) {
         item.stopped = true;
@@ -593,8 +675,12 @@ export class AgentSession {
     }
     item.text = item.text.trim() ? item.text : '';
     if (!item.text && !item.reasoning) this.removeItem(item);
+    const ended = Date.now();
+    this.runStats.turns++;
+    this.runStats.modelMs += ended - started;
     log.info(
-      `${ctx.model.id}: ${((Date.now() - started) / 1000).toFixed(1)}s, ${turn.usage ? `${turn.usage.promptTokens} prompt + ${turn.usage.completionTokens} output tokens` : `~${estimate} prompt tokens (estimated)`}, ${calls.length} tool call(s), finish ${turn.finishReason ?? 'unknown'}.`,
+      `${ctx.model.id}: ${formatDuration(ended - started)}${firstAt !== undefined ? ` (first response after ${formatDuration(firstAt - started)}${generationRate(turn.usage, ended - firstAt)})` : ''}, ` +
+        `${turn.usage ? `${turn.usage.promptTokens} prompt + ${turn.usage.completionTokens} output tokens` : `~${estimate} prompt tokens (estimated)`}, ${calls.length} tool call(s), finish ${turn.finishReason ?? 'unknown'}.`,
     );
     this.recordUsage(ctx, raw, estimate, turn.usage);
     if (!calls.length && turn.finishReason === 'length') {
@@ -639,6 +725,16 @@ export class AgentSession {
     this.transcript.push(card);
     const finish = (status: ToolItem['status'], result: ToolResult, extra: { stop?: boolean } = {}) => {
       card.status = status;
+      if (card.durationMs !== undefined) this.runStats.toolMs += card.durationMs;
+      if (card.waitedMs !== undefined) this.runStats.waitMs += card.waitedMs;
+      if (card.durationMs !== undefined || card.waitedMs !== undefined) {
+        const parts: string[] = [status];
+        if (card.durationMs !== undefined) parts.push(`ran ${formatDuration(card.durationMs)}`);
+        if (card.waitedMs !== undefined) parts.push(`waited ${formatDuration(card.waitedMs)} for approval`);
+        if (typeof card.exitCode === 'number') parts.push(`exit ${card.exitCode}`);
+        // The tool name and timings only: arguments can hold file contents or secrets.
+        log.info(`Tool ${call.name}: ${parts.join(', ')}.`);
+      }
       if (status === 'error' && !card.output) card.output = result.content.slice(0, 4000);
       // Only the first line: later lines of an error can quote file contents or command output.
       if (status === 'error') log.warn(`Tool ${call.name} failed: ${result.content.split('\n', 1)[0]!.slice(0, 200)}`);
@@ -712,7 +808,9 @@ export class AgentSession {
       card.status = 'awaiting-approval';
       card.approval = decision.request;
       this.events.changed();
+      const askedAt = Date.now();
       const answer = await waitFor<ApprovalDecision>(signal, { decision: 'deny' }, (resolve) => this.approvals.set(card.id, resolve));
+      card.waitedMs = Date.now() - askedAt;
       this.approvals.delete(card.id);
       card.approval = undefined;
       if (signal.aborted) return finish('cancelled', { content: 'Cancelled by the user.', isError: true });
@@ -732,11 +830,14 @@ export class AgentSession {
     }
     card.status = 'running';
     this.events.changed();
+    const runStarted = Date.now();
     try {
       const result = await prepared.execute();
+      card.durationMs = Date.now() - runStarted;
       if (signal.aborted) return finish('cancelled', { ...result, isError: true });
       return finish(result.isError ? 'error' : 'done', result);
     } catch (e) {
+      card.durationMs = Date.now() - runStarted;
       if (signal.aborted) return finish('cancelled', { content: 'Cancelled by the user.', isError: true });
       return finish('error', { content: `${tool.name} failed: ${(e as Error).message}`, isError: true });
     }
@@ -768,6 +869,7 @@ export class AgentSession {
         this.todos = todos;
         this.events.changed();
       },
+      todos: () => this.todos,
     };
   }
 
@@ -882,3 +984,8 @@ function actionFor(e: unknown): 'setApiKey' | 'openSettings' | 'retry' {
   return 'retry';
 }
 
+/** ", 7.1 tok/s" for a log line, when the server reported the output tokens. */
+function generationRate(usage: Usage | null | undefined, generationMs: number): string {
+  if (!usage?.completionTokens || generationMs <= 0) return '';
+  return `, ${(usage.completionTokens / (generationMs / 1000)).toFixed(1)} tok/s`;
+}

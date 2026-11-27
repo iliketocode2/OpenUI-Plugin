@@ -53,6 +53,8 @@ export interface ToolContext {
   update(patch: ToolCardUpdate): void;
   ask(questions: AskUserQuestion[]): Promise<string[][]>;
   setTodos(todos: TodoItem[]): void;
+  /** The task list as it is now, for status updates by item number. */
+  todos(): TodoItem[];
   beforeWrite(absolute: string): Promise<void>;
   afterWrite(absolute: string): Promise<void>;
   skills: Skill[];

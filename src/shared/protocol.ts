@@ -54,6 +54,10 @@ export interface ToolCardUpdate {
   image?: string;
   exitCode?: number | null;
   diffId?: string;
+  /** How long the tool ran, not counting the wait for approval. */
+  durationMs?: number;
+  /** How long the tool waited for the user's approval. */
+  waitedMs?: number;
 }
 
 export interface AskUserQuestion {
@@ -83,9 +87,33 @@ export type TranscriptItem =
   | ({ id: string; kind: 'tool'; ts: number; tool: string; title: string; status: ToolStatus; approval?: ApprovalRequest } & ToolCardUpdate)
   | { id: string; kind: 'question'; ts: number; questions: AskUserQuestion[]; answers?: string[][]; status: 'open' | 'answered' | 'cancelled' }
   | { id: string; kind: 'review'; ts: number; checkpoint: string; files: ReviewFile[]; status: 'open' | 'done' }
+  | ({ id: string; kind: 'summary'; ts: number } & RunSummary)
   | { id: string; kind: 'error'; text: string; ts: number; action?: 'setApiKey' | 'openSettings' | 'retry' | 'continue' | 'setContextSize' }
   | { id: string; kind: 'warning'; text: string; ts: number }
   | { id: string; kind: 'notice'; text: string; ts: number };
+
+/** Facts about a finished run, recorded by the extension; shown to the user, never sent to the model. */
+export interface RunSummary {
+  files: SummaryFile[];
+  commands: SummaryCommand[];
+  warnings: string[];
+  /** Files changed after the last command that exited with code 0. */
+  unverified: boolean;
+}
+
+export interface SummaryFile {
+  absolute: string;
+  display: string;
+  action: 'added' | 'modified' | 'deleted';
+}
+
+export interface SummaryCommand {
+  command: string;
+  status: ToolStatus;
+  exitCode?: number | null;
+  /** Started with start_process: its exit code is not known when the run ends. */
+  background: boolean;
+}
 
 export interface ReviewFile {
   absolute: string;
@@ -114,6 +142,14 @@ export interface HistoryEntry {
   match?: string;
 }
 
+/** A background warm-up of the selected model (see AgentController.warmUp). */
+export interface WarmUpView {
+  status: 'warming' | 'failed';
+  modelId: string;
+  startedAt: number;
+  error?: string;
+}
+
 export interface ViewState {
   sessionId: string;
   connection: ConnectionView;
@@ -127,6 +163,7 @@ export interface ViewState {
   sovereignty: SovereigntyLevel;
   noticeAcknowledged: boolean;
   web: WebStatusView;
+  warmUp?: WarmUpView;
 }
 
 export type ToWebview =
@@ -147,6 +184,7 @@ export type FromWebview =
   | { type: 'setModelThinking'; id: string; thinking: boolean }
   | { type: 'setContextSize'; id: string }
   | { type: 'setMode'; mode: AgentMode }
+  | { type: 'implementPlan' }
   | { type: 'setApiKey' }
   | { type: 'openSettings' }
   | { type: 'refreshModels' }
